@@ -8,7 +8,7 @@ Want to make your own fork? Do it!
 
 If you build an addon for another router or platform, though, I'd love it if you added it here as well, so everyone can find and benefit from it.
 
-Usage of AI
+## Usage of AI
 
 AI was used to write the code for WANSINN. I can read and understand code, but I can't really write it myself, so I used AI to build the software I wanted.
 
@@ -21,3 +21,15 @@ The code may be AI-generated, but it isn't blindly generated and published in th
 I tested it, broke it, ran into issues, fixed them, changed the design when something didn't work, and iterated on it repeatedly.
 
 AI writes the code. I decide what the software should do and test whether it actually does it.
+
+## License
+
+WANSINN is free software licensed under the GNU General Public License
+version 3 or later (GPL-3.0-or-later).
+
+Copyright (C) 2026 Felix Bornhöft
+
+You are free to use, study, modify, and redistribute WANSINN under the
+terms of the GNU General Public License.
+
+See "LICENSE" for the full license text.
