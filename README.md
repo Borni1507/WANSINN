@@ -48,6 +48,8 @@ If you build an addon for another router or platform, I'd love it if you
 contributed it back to the project as well, so everyone can find and
 benefit from it.
 
+NOTE: ROUTERS SOMETIMES HAVE TO BE MODIFIED TO USE WANSINN (INTERNAL MULTI-WAN ENGINE SHUTDOWN ETC.) WANSINN TRIES TO BE AS UNINTRUSIVE AS POSSIBLE, BUT SOMETIMES IT HAS TO TAKE CONTROL OF CERTAIN SYSTEMS, WHICH LEADS TO THE ROUTER BELIEVING THAT THERE IS AN FIREMWARE ISSUE!
+
 ## Why I made this
 
 I made WANSINN for myself, or, more accurately, I let AI build it for
