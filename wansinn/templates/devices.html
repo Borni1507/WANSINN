@@ -1,0 +1,319 @@
+{% extends "base.html" %}
+{% block title %}{{ t('devices.title') }} · WANSINN{% endblock %}
+{% from '_icons.html' import icon %}
+{% block content %}
+
+<section class="panel management-intro">
+  <div class="panel-head">
+    <div>
+      <span class="eyebrow">{{ t('devices.inventory') }}</span>
+      <h2>{{ t('devices.title') }}</h2>
+      <p class="muted-copy">{{ t('devices.subtitle_full') }}</p>
+    </div>
+    <a class="secondary-link back-arrow" href="{{ url_for('main.index') }}" aria-label="{{ t('devices.back_control') }}" title="{{ t('devices.back_control') }}">←</a>
+  </div>
+</section>
+
+
+
+
+<section class="panel">
+  <div class="panel-head">
+    <div><span class="eyebrow">{{ t('nav.devices')|upper }}</span><h2>{{ t('devices.managed') }}</h2></div>
+  </div>
+  <label class="management-search">
+    <span>{{ t('devices.search') }}</span>
+    <input id="managed-device-search" type="search" placeholder="{{ t('devices.search_managed') }}" autocomplete="off">
+  </label>
+  <div class="management-device-list" id="managed-device-list">
+    {% for d in devices %}
+      <article class="management-device-row"
+               data-search="{{ d.name|lower }} {{ d.ip|lower }} {{ (d.mac or '')|lower }} {{ (d.note or '')|lower }}">
+        <div class="managed-device-identity">{{ icon(d.device_type or "desktop","device-type-icon") }}<strong>{{ d.name }}</strong><code>{{ d.ip }}</code>{% if d.mac %}<small>{{ d.mac }}</small>{% endif %}</div>
+        {% if d.note %}<span>{{ d.note }}</span>{% endif %}
+        <div class="management-row-actions">
+          <button type="button" onclick="document.getElementById('manage-edit-device-{{ d.id }}').showModal()">{{ t('common.edit') }}</button>
+          <form method="post" action="{{ url_for('main.delete',i=d.id) }}" onsubmit="return confirm('{{ t('devices.remove_confirm') }}');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="danger-action">{{ t('common.remove') }}</button>
+          </form>
+        </div>
+      </article>
+      <dialog id="manage-edit-device-{{ d.id }}" class="offline-dialog device-edit-dialog">
+        <form method="post" action="{{ url_for('main.edit_device',i=d.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <span class="eyebrow">{{ t('devices.edit') }}</span><h3>{{ d.name }}</h3>
+          <label>{{ t('common.name') }}<input name="name" value="{{ d.name }}" required></label>
+          <label>{{ t('devices.ip_address') }}<input name="ip" value="{{ d.ip }}" required></label>
+          <label>{{ t('devices.mac_address') }}<input name="mac" value="{{ d.mac or '' }}" placeholder="AA:BB:CC:DD:EE:FF"></label>
+          <label>{{ t('devices.device_type') }}
+            <select name="device_type">
+              {% for type_id, type_label in device_types.items() %}
+                <option value="{{ type_id }}" {% if (d.device_type or 'desktop') == type_id %}selected{% endif %}>{{ t('device_type.' ~ type_id, default=type_label) }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>{{ t('common.note') }}<input name="note" value="{{ d.note or '' }}"></label>
+          <div class="offline-dialog-actions"><button type="button" onclick="this.closest('dialog').close()">{{ t('common.cancel') }}</button><button class="primary">{{ t('common.save') }}</button></div>
+        </form>
+      </dialog>
+    {% else %}
+      <div class="empty-state">{{ t('devices.none') }}</div>
+    {% endfor %}
+  </div>
+  <div id="managed-device-empty" class="empty-state" hidden>{{ t('devices.no_match') }}</div>
+</section>
+
+<section class="panel group-panel">
+  <div class="panel-head"><div><span class="eyebrow">GROUPS</span><h2>{{ t('devices.groups') }}</h2>
+    <p class="muted-copy">{{ t('devices.members_help') }}</p></div></div>
+
+  <details class="management-collapsible">
+    <summary>+ {{ t('devices.new_group') }}</summary>
+    <form method="post" action="{{ url_for('main.create_device_group') }}" class="group-create compact-group-editor" data-group-editor>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input name="name" placeholder="{{ t('devices.group_example') }}" required>
+      <input name="note" placeholder="{{ t('devices.note') }}">
+      <div class="group-member-search">
+        <input type="search" placeholder="{{ t('devices.search_member') }}" data-member-search autocomplete="off">
+        <div class="group-member-results" data-member-results hidden>
+          {% for d in devices %}<button type="button" data-device-id="{{ d.id }}" data-device-name="{{ d.name }}" data-device-ip="{{ d.ip }}" data-device-search="{{ d.name|lower }} {{ d.ip|lower }}">{{ d.name }} · {{ d.ip }}</button>{% endfor %}
+        </div>
+      </div>
+      <div class="group-selected-members" data-selected-members></div>
+      <button>{{ t('devices.create_group') }}</button>
+    </form>
+  </details>
+
+  {% if groups %}<div class="group-grid compact-group-grid">
+    {% for group in groups %}
+      <details class="group-card"><summary><strong>{{ group.name }}</strong><span>{{ group.member_count }} {{ t('common.devices_count') }}</span><small>{{ group.note }}</small></summary>
+        <form method="post" action="{{ url_for('main.update_device_group',group_id=group.id) }}" class="compact-group-editor" data-group-editor>
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input name="name" value="{{ group.name }}" required><input name="note" value="{{ group.note }}" placeholder="{{ t('devices.note') }}">
+          <div class="group-member-search">
+            <input type="search" placeholder="{{ t('devices.search_name_ip') }}" data-member-search autocomplete="off">
+            <div class="group-member-results" data-member-results hidden>
+              {% set mids=group_members.get(group.id,[])|map(attribute='id')|list %}
+              {% for d in devices %}<button type="button" data-device-id="{{ d.id }}" data-device-name="{{ d.name }}" data-device-ip="{{ d.ip }}" data-device-search="{{ d.name|lower }} {{ d.ip|lower }}" {% if d.id in mids %}data-selected="1"{% endif %}>{{ d.name }} · {{ d.ip }}</button>{% endfor %}
+            </div>
+          </div>
+          <div class="group-selected-members" data-selected-members></div>
+          <button>{{ t('devices.save_members') }}</button>
+        </form>
+        <form method="post" action="{{ url_for('main.delete_device_group',group_id=group.id) }}" onsubmit="return confirm({{ t('devices.group_delete_confirm')|tojson }});">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="danger-action">{{ t('devices.group_delete') }}</button>
+        </form>
+      </details>
+    {% endfor %}
+  </div>{% else %}<div class="empty-state compact-empty">{{ t('devices.no_groups') }}</div>{% endif %}
+</section>
+
+<section class="panel discovery-panel">
+  <div class="panel-head">
+    <div><span class="eyebrow">DEVICE DISCOVERY</span><h2>{{ t('devices.discovery') }}</h2>
+      <p class="muted-copy">{{ t('devices.discovery_help') }}</p></div>
+    <form method="post" action="{{ url_for('main.discover_devices_now') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="primary">{{ t('common.search_now') }}</button>
+    </form>
+  </div>
+  {% if discovered %}
+    <label class="management-search"><span>{{ t('devices.discovery_search') }}</span><input id="discovery-search" type="search" placeholder="{{ t('devices.search_discovery_placeholder') }}" autocomplete="off"></label>
+    <div class="discovery-list" id="discovery-list">
+      {% for d in discovered %}
+      <article class="discovery-row" data-search="{{ (d.name or '')|lower }} {{ d.ip|lower }} {{ d.mac|lower }}">
+        <div class="discovery-id"><strong>{{ d.name or t('devices.unnamed') }}</strong><code>{{ d.ip }}</code><small>{{ d.mac }}</small></div>
+        <div class="discovery-meta"><span>{{ d.source|upper }}</span>{% if d.interface %}<code>{{ d.interface }}</code>{% endif %}</div>
+        <form class="discovery-adopt" method="post" action="{{ url_for('main.adopt_discovered_device',mac=d.mac) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input name="name" value="{{ d.name }}" placeholder="{{ t('devices.device_name') }}" required><input name="note" placeholder="{{ t('devices.note') }}"><button class="primary">{{ t('devices.adopt') }}</button>
+        </form>
+        <form method="post" action="{{ url_for('main.ignore_discovered_device',mac=d.mac) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button>{{ t('common.hide') }}</button>
+        </form>
+      </article>
+      {% endfor %}
+    </div>
+    <div id="discovery-empty" class="empty-state" hidden>{{ t('devices.no_search_result') }}</div>
+  {% else %}
+    <div class="empty-state compact-empty">{{ t('devices.no_new') }}</div>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <details class="management-collapsible">
+    <summary>{{ t('devices.manual_add') }}</summary>
+    <form class="add management-add-device" method="post" action="{{ url_for('main.add_device') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input name="name" placeholder="Name" required><input name="ip" placeholder="192.168.1.100" required>
+      <input name="mac" placeholder="MAC (optional)">
+      <select name="device_type">
+        {% for type_id, type_label in device_types.items() %}
+          <option value="{{ type_id }}">{{ t('device_type.' ~ type_id, default=type_label) }}</option>
+        {% endfor %}
+      </select>
+      <input name="note" placeholder="{{ t('common.note') }}"><button>{{ t('devices.add_device') }}</button>
+    </form>
+  </details>
+</section>
+
+
+
+<article class="config-card infrastructure-card">
+    <span class="eyebrow">{{ t('common.infrastructure')|upper }}</span>
+    <h3>{{ t('devices.reserved') }}</h3>
+    <p>
+      {{ t('devices.reserved_desc') }}
+      {{ t('devices.reserved_desc2') }}
+    </p>
+
+    <div class="infra-auto-reserved">
+      <span>{{ t('devices.auto_reserved') }}</span>
+      {% if management_ip %}<code>{{ management_ip }} · Management</code>{% endif %}
+      {% if testing_ip %}<code>{{ testing_ip }} · {{ t('devices.test_ip') }}</code>{% endif %}
+    </div>
+
+    <form id="infrastructure-form"
+          method="post"
+          action="{{ url_for('main.update_infrastructure_addresses') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <div class="infra-table">
+        <div class="infra-table-head">
+          <span>{{ t('devices.ip_address') }}</span>
+          <span>Name</span>
+          <span>{{ t('devices.note') }}</span>
+          <span></span>
+        </div>
+
+        <div id="infra-rows">
+          {% for item in infrastructure_addresses %}
+          <div class="infra-row">
+            <input
+              name="infra_{{ loop.index0 }}_ip"
+              value="{{ item.ip }}"
+              placeholder="192.168.1.254"
+              inputmode="decimal"
+              required>
+            <input
+              name="infra_{{ loop.index0 }}_name"
+              value="{{ item.name }}"
+              placeholder="AP Werkstatt">
+            <input
+              name="infra_{{ loop.index0 }}_note"
+              value="{{ item.note }}"
+              placeholder="Hinterm Patchpanel, seit 2023">
+            <button type="button"
+                    class="infra-remove danger-action"
+                    title="{{ t('devices.remove_entry') }}">×</button>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="infra-actions">
+        <button id="infra-add" type="button">{{ t('devices.add_infra') }}</button>
+        <button class="config-button primary" type="submit">{{ t('devices.save_changes') }}</button>
+      </div>
+    </form>
+  </article>
+
+<template id="infra-row-template">
+    <div class="infra-row">
+      <input data-field="ip" placeholder="192.168.1.254" inputmode="decimal">
+      <input data-field="name" placeholder="AP Werkstatt">
+      <input data-field="note" placeholder="Hinterm Patchpanel, seit 2023">
+      <button type="button"
+              class="infra-remove danger-action"
+              title="{{ t('devices.remove_entry') }}">×</button>
+    </div>
+  </template>
+
+  <script>
+  (() => {
+    const rows = document.getElementById("infra-rows");
+    const template = document.getElementById("infra-row-template");
+    const add = document.getElementById("infra-add");
+
+    function renumber() {
+      [...rows.querySelectorAll(".infra-row")].forEach((row, index) => {
+        const inputs = row.querySelectorAll("input");
+        inputs[0].name = `infra_${index}_ip`;
+        inputs[1].name = `infra_${index}_name`;
+        inputs[2].name = `infra_${index}_note`;
+        inputs[0].required = true;
+      });
+    }
+
+    function bindRemove(button) {
+      button.addEventListener("click", () => {
+        button.closest(".infra-row").remove();
+        renumber();
+      });
+    }
+
+    rows.querySelectorAll(".infra-remove").forEach(bindRemove);
+
+    add.addEventListener("click", () => {
+      const fragment = template.content.cloneNode(true);
+      const row = fragment.querySelector(".infra-row");
+      rows.appendChild(fragment);
+      bindRemove(rows.lastElementChild.querySelector(".infra-remove"));
+      renumber();
+      rows.lastElementChild.querySelector("input").focus();
+    });
+
+    renumber();
+  })();
+  </script>
+
+<script>
+(() => {
+  function wireFilter(inputId, containerId, rowSelector, emptyId) {
+    const input=document.getElementById(inputId), box=document.getElementById(containerId), empty=document.getElementById(emptyId);
+    if(!input||!box)return;
+    const rows=[...box.children].filter(row => row.matches(rowSelector));
+    const apply=()=>{
+      const q=input.value.trim().toLocaleLowerCase();
+      let n=0;
+      rows.forEach(row=>{
+        const haystack=(row.dataset.search||"").toLocaleLowerCase();
+        const visible=!q||haystack.includes(q);
+        row.style.display=visible?"":"none";
+        if(visible)n++;
+      });
+      if(empty)empty.hidden=n!==0;
+    };
+    input.addEventListener("input",apply); input.addEventListener("search",apply); apply();
+  }
+  wireFilter("managed-device-search","managed-device-list",".management-device-row","managed-device-empty");
+  wireFilter("discovery-search","discovery-list",".discovery-row","discovery-empty");
+
+  document.querySelectorAll("[data-group-editor]").forEach(editor=>{
+    const search=editor.querySelector("[data-member-search]"), results=editor.querySelector("[data-member-results]"), selected=editor.querySelector("[data-selected-members]");
+    if(!search||!results||!selected)return;
+    const buttons=[...results.querySelectorAll("button[data-device-id]")];
+    const chosen=new Map();
+    const render=()=>{
+      selected.innerHTML="";
+      chosen.forEach((d,id)=>{
+        const chip=document.createElement("span"); chip.className="group-member-chip";
+        chip.textContent=`${d.name} · ${d.ip}`;
+        const x=document.createElement("button");x.type="button";x.textContent="×";x.title="{{ t('devices.remove_group') }}";
+        x.addEventListener("click",()=>{chosen.delete(id);render();});
+        const hidden=document.createElement("input");hidden.type="hidden";hidden.name="device_ids";hidden.value=id;
+        chip.appendChild(x);chip.appendChild(hidden);selected.appendChild(chip);
+      });
+    };
+    buttons.forEach(b=>{
+      if(b.dataset.selected==="1")chosen.set(b.dataset.deviceId,{name:b.dataset.deviceName,ip:b.dataset.deviceIp});
+      b.addEventListener("click",()=>{chosen.set(b.dataset.deviceId,{name:b.dataset.deviceName,ip:b.dataset.deviceIp});search.value="";results.hidden=true;render();});
+    });
+    search.addEventListener("input",()=>{
+      const q=search.value.trim().toLowerCase();results.hidden=!q;
+      buttons.forEach(b=>{b.hidden=!q||(chosen.has(b.dataset.deviceId))||!(b.dataset.deviceSearch||"").includes(q);});
+    });
+    search.addEventListener("focus",()=>{if(search.value.trim())search.dispatchEvent(new Event("input"));});
+    render();
+  });
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}{{ t('settings.users') }} · WANSINN{% endblock %}
+{% block content %}
+<section class="panel">
+  <a href="{{ url_for('main.index') }}">← Dashboard</a>
+  <small>ACCOUNTING</small><h2>{{ t('users.title') }}</h2>
+  <div class="user-list">
+    {% for user in users %}
+    <form class="user-row" method="post" action="{{ url_for('auth.update_user', user_id=user.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div><strong>{{ user.username }}</strong><small> {{ t('user.since', date=user.created_at) }}</small></div>
+      <select name="role">{% for role in roles %}<option value="{{ role }}" {% if user.role == role %}selected{% endif %}>{{ role_labels[role] }}</option>{% endfor %}</select>
+      <label class="inline"><input type="checkbox" name="active" {% if user.active %}checked{% endif %}> {{ t('user.active') }}</label>
+      <input type="password" name="new_password" placeholder="{{ t('users.new_password') }}" autocomplete="new-password">
+      <button>{{ t('common.save') }}</button>
+    </form>
+    {% endfor %}
+  </div>
+</section>
+<section class="panel">
+  <small>{{ t('users.new_account') }}</small><h2>{{ t('users.create') }}</h2>
+  <form class="add" method="post" action="{{ url_for('auth.create_user') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input name="username" placeholder="{{ t('users.username_placeholder') }}" minlength="3" required>
+    <input type="password" name="password" placeholder="{{ t('users.password_hint') }}" minlength="10" required autocomplete="new-password">
+    <select name="role">{% for role in roles %}<option value="{{ role }}">{{ role_labels[role] }}</option>{% endfor %}</select>
+    <button>{{ t('users.create') }}</button>
+  </form>
+</section>
+{% endblock %}

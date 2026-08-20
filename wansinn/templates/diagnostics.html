@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% block title %}Medic · WANSINN{% endblock %}
+{% block content %}
+<div class="auto-state-diagnostic">
+  <span>{{ t('diagnostics.auto_state') }}</span>
+  {% if current_auto_state %}
+    <strong>{{ t('medic.used', name=current_auto_state.name) }}</strong>
+  {% elif current_auto_key %}
+    <strong class="warning-text">{{ t('logs.no_state') }}</strong>
+  {% else %}
+    <strong>{{ t('logs.no_health') }}</strong>
+  {% endif %}
+</div>
+
+<section id="medic-hero" class="panel medic-hero {{ medic_overall_class or 'medic-loading' }}">
+  <div class="medic-title-row">
+    <div>
+      <small>WANSINN MEDIC</small>
+      <h2 id="medic-overall">{{ medic_overall_label or t('logs.checking') }}</h2>
+      <p id="medic-progress">{{ t('logs.checked_at', time=medic_checked_at) if medic_checked_at else t('logs.router_loading') }}</p>
+    </div>
+    <div class="medic-pulse loading" aria-hidden="true">✚</div>
+  </div>
+
+  <div class="health-summary">
+    <span class="health-count ok"><b id="count-ok">0</b> OK</span>
+    <span class="health-count warning"><b id="count-warning">0</b> {{ t('medic.warnings') }}</span>
+    <span class="health-count error"><b id="count-error">0</b> {{ t('logs.errors') }}</span>
+    <span class="health-count unknown"><b id="count-unknown">0</b> {{ t('medic.unknown') }}</span>
+  </div>
+
+  <div class="medic-meta">
+    <span>{{ addon_info.name }} · Add-on v{{ addon_info.version }}</span>
+    <span id="medic-checked-at">{{ t('logs.check_running') }}</span>
+    <button id="medic-recheck" class="secondary-link" type="button">{{ t('logs.recheck') }}</button>
+    <a class="secondary-link back-arrow" href="{{ url_for('main.index') }}" aria-label="{{ t('config.back') }}" title="{{ t('config.back') }}">←</a>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <div>
+      <small>{{ t('medic.health_checks') }}</small>
+      <h2>Details</h2>
+    </div>
+  </div>
+
+  <div id="health-grid" class="health-grid progressive-health-grid">
+    {% if medic_checks %}
+      {% for check in medic_checks %}
+      <article class="health-card {{ check.status }}" data-check-id="{{ check.id }}">
+        <div class="health-card-head">
+          <span class="health-dot"></span>
+          <div>
+            <h3>{{ check.label }}</h3>
+            <p>{{ check.message }}</p>
+          </div>
+          <strong class="health-card-status {{ check.status }}" data-status="{{ check.status }}">{{ check.status|upper }}</strong>
+        </div>
+        {% if check.details %}
+        <ul>
+          {% for detail in check.details %}<li>{{ detail }}</li>{% endfor %}
+        </ul>
+        {% else %}
+        <ul hidden></ul>
+        {% endif %}
+      </article>
+      {% endfor %}
+    {% else %}
+      <div class="empty-state">{{ t('logs.not_run') }}</div>
+    {% endif %}
+  </div>
+</section>
+
+<section class="panel">
+  <details id="raw-details">
+    <summary>{{ t('diagnostics.raw_show') }}</summary>
+    <div id="raw-loading" class="raw-loading">{{ t('logs.raw_lazy') }}</div>
+    <div id="raw-diagnostics" class="diagnostic-grid raw-diagnostics" hidden></div>
+  </details>
+</section>
+
+<script>
+(() => {
+  const rawUrl = {{ url_for('main.diagnostics_raw')|tojson }};
+
+  async function loadRaw() {
+    const loading = document.getElementById("raw-loading");
+    const grid = document.getElementById("raw-diagnostics");
+    if (!loading || !grid || grid.dataset.loaded === "1") return;
+
+    loading.textContent = {{ t('diagnostics.raw_loading')|tojson }};
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 30000);
+      const response = await fetch(rawUrl, {
+        cache:"no-store",
+        credentials:"same-origin",
+        signal:controller.signal
+      });
+      clearTimeout(timer);
+      const data = await response.json();
+      if (!data.ok) throw new Error(data.error || {{ t('logs.raw_failed', error='')|tojson }});
+
+      const labels = {
+        connection:{{ t('health.ssh')|tojson }},
+        system:"System",
+        routing_tables:"Routing-Tabellen",
+        routes:{{ t('diagnostics.default_routes')|tojson }},
+        nat_rules:"NAT",
+        mangle_rules:"Mangle",
+        filter_rules:"Filter",
+        address_lists:"Provider-Listen"
+      };
+
+      grid.innerHTML = "";
+      for (const [key, value] of Object.entries(data.raw)) {
+        const article = document.createElement("article");
+        const h3 = document.createElement("h3");
+        const pre = document.createElement("pre");
+        h3.textContent = labels[key] || key;
+        pre.textContent = typeof value === "string"
+          ? value
+          : Array.isArray(value) ? value.join("\\n") : JSON.stringify(value, null, 2);
+        article.append(h3, pre);
+        grid.appendChild(article);
+      }
+      grid.hidden = false;
+      grid.dataset.loaded = "1";
+      loading.hidden = true;
+    } catch (error) {
+      loading.textContent = {{ t("diagnostics.raw_load_failed", error="__ERROR__")|tojson }}.replace("__ERROR__", error.message);
+    }
+  }
+
+  const rawDetails = document.getElementById("raw-details");
+  if (rawDetails) {
+    rawDetails.addEventListener("toggle", event => {
+      if (event.currentTarget.open) loadRaw();
+    });
+  }
+
+  const recheck = document.getElementById("medic-recheck");
+  if (recheck) recheck.addEventListener("click", () => location.reload());
+})();
+</script>
+{% endblock %}

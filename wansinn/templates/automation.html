@@ -1,0 +1,388 @@
+{% extends "base.html" %}
+{% block title %}{{ t('automation.title') }} · WANSINN{% endblock %}
+{% block content %}
+<section class="panel">
+  <div class="panel-head">
+    <div>
+      <span class="eyebrow">{{ t('automation.eyebrow') }}</span>
+      <h2>{{ t('automation.time_control') }}</h2>
+      <p class="muted-copy">{{ t('automation.windows_intro') }}</p>
+    </div>
+    <a class="secondary-link back-arrow" href="{{ url_for('main.index') }}">←</a>
+  </div>
+  <div class="automation-priority compact">
+    <strong>{{ t('automation.priority') }}</strong>
+    <span>{{ t('automation.manual') }}</span><b>›</b><span>{{ t('automation.eyebrow') }}</span><b>›</b><span>{{ t('automation.auto_routes') }}</span>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <div>
+      <span class="eyebrow">{{ t('automation.time_window_eyebrow') }}</span>
+      <h2>{{ t('automation.internet_by_time') }}</h2>
+      <p class="muted-copy">{{ t('automation.example_schedule') }}</p>
+    </div>
+  </div>
+
+  <form class="window-create-form"
+        method="post"
+        action="{{ url_for('main.create_automation_window') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>{{ t('automation.device') }}
+      <select name="device_id">
+        <option value="">{{ t('automation.single_device') }}</option>
+        {% for d in devices %}<option value="{{ d.id }}">{{ d.name }} · {{ d.ip }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>{{ t('automation.or_group') }}
+      <select name="group_id">
+        <option value="">{{ t('automation.no_group') }}</option>
+        {% for g in groups %}<option value="{{ g.id }}">{{ g.name }} · {{ g.member_count }} {{ t('common.devices_count') }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>{{ t('automation.window') }}
+      <select name="mode">
+        <option value="online">✓ {{ t('automation.internet_on') }}</option>
+        <option value="offline">⛔ {{ t('automation.internet_off') }}</option>
+      </select>
+    </label>
+    <label>{{ t('automation.from') }}<input type="time" name="start_hhmm" value="07:00" required></label>
+    <label>{{ t('automation.to') }}<input type="time" name="end_hhmm" value="19:00" required></label>
+
+    <div class="automation-days window-days">
+      <span>{{ t('automation.days') }}</span>
+      {% set day_names=[t('weekday.mon'), t('weekday.tue'), t('weekday.wed'), t('weekday.thu'), t('weekday.fri'), t('weekday.sat'), t('weekday.sun')] %}
+      {% for day in range(7) %}
+        <label><input type="checkbox" name="day_{{ day }}" {% if day < 5 %}checked{% endif %}><span>{{ day_names[day] }}</span></label>
+      {% endfor %}
+    </div>
+    <input type="hidden" name="active" value="on">
+    <button class="config-button primary">{{ t('automation.create_window') }}</button>
+  </form>
+</section>
+
+<section class="panel automation-week-panel">
+  <div class="panel-head">
+    <div>
+      <span class="eyebrow">{{ t('automation.week_schedule') }}</span>
+      <h2>{{ t('automation.windows') }}</h2>
+      <p class="muted-copy">
+        {{ t('automation.window_help') }}
+      </p>
+    </div>
+    <div class="automation-legend">
+      <span><i class="online"></i> {{ t('automation.internet_on') }}</span>
+      <span><i class="offline"></i> {{ t('automation.internet_off') }}</span>
+    </div>
+  </div>
+  {% if timeline_devices %}
+    <div id="automation-timelines" class="automation-timelines"></div>
+  {% else %}
+    <div class="empty-state">{{ t('automation.empty') }}</div>
+  {% endif %}
+</section>
+
+{% if windows %}
+<section class="panel">
+  <details class="automation-window-editor">
+    <summary>
+      <span><span class="eyebrow">{{ t('automation.time_window_eyebrow') }}</span><strong>{{ t('automation.window_edit') }}</strong></span>
+      <small>{{ t('automation.windows_count', count=windows|length) }}</small>
+    </summary>
+    <div class="window-edit-list">
+      {% set day_names=[t('weekday.mon'), t('weekday.tue'), t('weekday.wed'), t('weekday.thu'), t('weekday.fri'), t('weekday.sat'), t('weekday.sun')] %}
+      {% for w in windows %}
+        {% set selected_days=w.weekdays.split(',') %}
+        <article class="window-edit-row {% if not w.active %}disabled{% endif %}">
+          <form method="post" action="{{ url_for('main.update_automation_window',window_id=w.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="window-edit-main">
+              <label>{{ t('automation.device') }}<select name="device_id">
+                {% for d in devices %}<option value="{{ d.id }}" {% if d.id==w.device_id %}selected{% endif %}>{{ d.name }} · {{ d.ip }}</option>{% endfor %}
+              </select></label>
+              <label>{{ t('automation.window') }}<select name="mode">
+                <option value="online" {% if w.mode=='online' %}selected{% endif %}>{{ t('automation.internet_on') }}</option>
+                <option value="offline" {% if w.mode=='offline' %}selected{% endif %}>{{ t('automation.internet_off') }}</option>
+              </select></label>
+              <label>{{ t('automation.from') }}<input type="time" name="start_hhmm" value="{{ w.start_hhmm }}"></label>
+              <label>{{ t('automation.to') }}<input type="time" name="end_hhmm" value="{{ w.end_hhmm }}"></label>
+            </div>
+            <div class="automation-edit-days">
+              {% for day in range(7) %}
+                <label><input type="checkbox" name="day_{{ day }}" {% if (day|string) in selected_days %}checked{% endif %}><span>{{ day_names[day] }}</span></label>
+              {% endfor %}
+              <label class="automation-active compact-toggle"><input type="checkbox" name="active" {% if w.active %}checked{% endif %}><span>{{ t('user.active') }}</span></label>
+            </div>
+            <div class="window-edit-actions"><button>{{ t('common.save') }}</button></div>
+          </form>
+          <form method="post" action="{{ url_for('main.delete_automation_window',window_id=w.id) }}" onsubmit="return confirm('{{ t('automation.delete_window_confirm') }}');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="danger-action">{{ t('common.delete') }}</button>
+          </form>
+        </article>
+      {% endfor %}
+    </div>
+  </details>
+</section>
+{% endif %}
+
+<section class="panel">
+  <details class="automation-rule-editor">
+    <summary>
+      <span>
+        <span class="eyebrow">{{ t('automation.advanced') }}</span>
+        <strong>{{ t('automation.individual_switch_points') }}</strong>
+      </span>
+      <small>{{ rules|length }} {{ t('automation.free_switch_points') }}</small>
+    </summary>
+
+    <div class="advanced-point-create">
+      <form class="automation-quick-form"
+            method="post"
+            action="{{ url_for('main.create_automation_rule') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label>{{ t('automation.device') }}<select name="device_id" required>
+          <option value="">{{ t('automation.choose_device') }}</option>
+          {% for d in devices %}<option value="{{ d.id }}">{{ d.name }} · {{ d.ip }}</option>{% endfor %}
+        </select></label>
+        <label>{{ t('automation.time') }}<input type="time" name="time_hhmm" value="22:00" required></label>
+        <label>{{ t('automation.then') }}<select name="action"><option value="offline">{{ t('automation.internet_off') }}</option><option value="online">{{ t('automation.internet_on') }}</option></select></label>
+        <div class="automation-days quick">
+          <span>{{ t('automation.days') }}</span>
+          {% set day_names=[t('weekday.mon'), t('weekday.tue'), t('weekday.wed'), t('weekday.thu'), t('weekday.fri'), t('weekday.sat'), t('weekday.sun')] %}
+          {% for day in range(7) %}<label><input type="checkbox" name="day_{{ day }}" {% if day < 5 %}checked{% endif %}><span>{{ day_names[day] }}</span></label>{% endfor %}
+        </div>
+        <input type="hidden" name="active" value="on">
+        <button>{{ t('automation.add_point') }}</button>
+      </form>
+    </div>
+
+    {% if rules %}
+    <div class="automation-edit-list">
+      {% set day_names=[t('weekday.mon'), t('weekday.tue'), t('weekday.wed'), t('weekday.thu'), t('weekday.fri'), t('weekday.sat'), t('weekday.sun')] %}
+      {% for rule in rules %}
+        {% set selected_days=rule.weekdays.split(',') %}
+        <article class="automation-edit-row {% if not rule.active %}disabled{% endif %}">
+          <form method="post" action="{{ url_for('main.update_automation_rule',rule_id=rule.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="automation-edit-main">
+              <label>{{ t('automation.device') }}<select name="device_id">
+                {% for d in devices %}<option value="{{ d.id }}" {% if d.id==rule.device_id %}selected{% endif %}>{{ d.name }} · {{ d.ip }}</option>{% endfor %}
+              </select></label>
+              <label>{{ t('automation.time') }}<input type="time" name="time_hhmm" value="{{ rule.time_hhmm }}"></label>
+              <label>{{ t('automation.action') }}<select name="action">
+                <option value="offline" {% if rule.action=='offline' %}selected{% endif %}>{{ t('automation.internet_off') }}</option>
+                <option value="online" {% if rule.action=='online' %}selected{% endif %}>{{ t('automation.internet_on') }}</option>
+              </select></label>
+            </div>
+            <div class="automation-edit-days">
+              {% for day in range(7) %}<label><input type="checkbox" name="day_{{ day }}" {% if (day|string) in selected_days %}checked{% endif %}><span>{{ day_names[day] }}</span></label>{% endfor %}
+              <label class="automation-active compact-toggle"><input type="checkbox" name="active" {% if rule.active %}checked{% endif %}><span>{{ t('user.active') }}</span></label>
+            </div>
+            <div class="automation-edit-actions"><span class="automation-rule-next">{{ next_times.get(rule.id,'—') }}</span><button>{{ t('common.save') }}</button></div>
+          </form>
+          <div class="automation-edit-secondary">
+            <form method="post" action="{{ url_for('main.run_automation_rule',rule_id=rule.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button>{{ t('common.test') }}</button>
+            </form>
+            <form method="post" action="{{ url_for('main.delete_automation_rule',rule_id=rule.id) }}" onsubmit="return confirm('{{ t('automation.delete_point_confirm') }}');">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="danger-action">{{ t('common.delete') }}</button>
+            </form>
+          </div>
+        </article>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </details>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><div><span class="eyebrow">{{ t('automation.override_eyebrow') }}</span><h2>{{ t('automation.active_now') }}</h2></div></div>
+  <div class="automation-device-status compact-status">
+    {% set ns=namespace(count=0) %}
+    {% for d in devices %}
+      {% if d.automation_override %}
+        {% set ns.count=ns.count+1 %}
+        <div class="automation-device-row active">
+          <div><strong>{{ d.name }}</strong><small>{{ d.ip }}</small></div>
+          <b>{{ d.automation_override|upper }}</b><span>{{ t('automation.basis') }} {{ d.wan_profile|upper }}</span><small>{{ t('user.since', date=d.automation_override_at or '—') }}</small>
+        </div>
+      {% endif %}
+    {% endfor %}
+    {% if ns.count==0 %}<div class="empty-state">{{ t('automation.none_active') }}</div>{% endif %}
+  </div>
+</section>
+
+<script>
+(() => {
+  const data={{ timeline_devices|tojson }};
+  const host=document.getElementById("automation-timelines");
+  const csrfToken={{ csrf_token()|tojson }};
+  const windowEndpointTemplate={{ url_for('main.update_automation_window_timing',window_id=0)|tojson }};
+  const pointEndpointTemplate={{ url_for('main.update_automation_rule_time',rule_id=0)|tojson }};
+  const basisLabel={{ t('automation.basis')|tojson }};
+  const advancedLabel={{ t('automation.advanced')|tojson }};
+  const actionOffLabel={{ t('automation.action_off')|tojson }};
+  const actionOnLabel={{ t('automation.action_on')|tojson }};
+  if(!host||!data.length)return;
+
+  const dayNames=[{{ t("weekday.mon")|tojson }}, {{ t("weekday.tue")|tojson }}, {{ t("weekday.wed")|tojson }}, {{ t("weekday.thu")|tojson }}, {{ t("weekday.fri")|tojson }}, {{ t("weekday.sat")|tojson }}, {{ t("weekday.sun")|tojson }}];
+  const snap=5;
+  const toMin=t=>{const [h,m]=t.split(":").map(Number);return h*60+m};
+  const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
+  const toTime=m=>{m=clamp(Math.round(m/snap)*snap,0,1435);return `${String(Math.floor(m/60)).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`};
+
+  function el(tag,cls,text){const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n}
+
+  function piecesForWindow(w){
+    const s=toMin(w.start), e=toMin(w.end), result=[];
+    for(const day of w.weekdays){
+      if(e>s){
+        result.push({day,start:s,end:e,window:w,part:"full"});
+      }else{
+        result.push({day,start:s,end:1440,window:w,part:"start"});
+        result.push({day:(day+1)%7,start:0,end:e,window:w,part:"end"});
+      }
+    }
+    return result;
+  }
+
+  for(const device of data){
+    const card=el("article","automation-timeline-card");
+    const head=el("header","automation-timeline-head");
+    const ident=el("div","automation-timeline-device");
+    ident.append(el("strong","",device.name),el("small","",device.ip));
+    head.append(ident,el("span","timeline-basis",`${basisLabel}: ${device.wan_profile.toUpperCase()}`));
+    card.append(head);
+
+    const scale=el("div","automation-scale");
+    scale.innerHTML="<span>00</span><span>06</span><span>12</span><span>18</span><span>24</span>";
+    card.append(scale);
+
+    const week=el("div","automation-week");
+    const tracks=[];
+    for(let day=0;day<7;day++){
+      const row=el("div","automation-day-row");
+      row.append(el("b","automation-day-name",dayNames[day]));
+      const track=el("div","automation-track window-track");
+      track.dataset.day=day;
+      row.append(track);week.append(row);tracks.push(track);
+    }
+
+    for(const w of device.windows.filter(x=>x.active)){
+      for(const piece of piecesForWindow(w)){
+        const block=el("div",`automation-window-block ${w.mode}`);
+        block.dataset.windowId=w.id;
+        block.dataset.start=w.start;
+        block.dataset.end=w.end;
+        block.dataset.part=piece.part;
+        block.style.left=`${piece.start/1440*100}%`;
+        block.style.width=`${(piece.end-piece.start)/1440*100}%`;
+        block.title=`${w.mode==="online"?{{ t("automation.internet_on")|tojson }}:{{ t("automation.internet_off")|tojson }}} ${w.start}–${w.end}`;
+
+        if(piece.part==="full"){
+          const left=el("button","window-handle start");left.type="button";
+          const right=el("button","window-handle end");right.type="button";
+          block.append(left,right);
+        }
+        const label=el("span","window-label",`${w.start}–${w.end}`);
+        block.append(label);
+        tracks[piece.day].append(block);
+      }
+    }
+
+    for(const p of device.points.filter(x=>x.active)){
+      for(const day of p.weekdays){
+        const marker=el("button",`automation-marker advanced ${p.action}`);
+        marker.type="button";marker.dataset.ruleId=p.id;marker.dataset.minute=toMin(p.time);
+        marker.style.left=`${toMin(p.time)/1440*100}%`;
+        marker.title=`${advancedLabel}: ${p.time} → ${p.action==="offline"?actionOffLabel:actionOnLabel}`;
+        marker.append(el("span","automation-marker-time",p.time));
+        tracks[day].append(marker);
+      }
+    }
+
+    card.append(week);
+    const footer=el("footer","automation-timeline-footer");
+    footer.append(el("span","",`${device.windows.length} {{ t('automation.windows') }}`),el("span","",`${device.points.length} {{ t('automation.advanced_switch_points') }}`));
+    card.append(footer);host.append(card);
+  }
+
+  function minuteFromPointer(track,x){
+    const rect=track.getBoundingClientRect();
+    return clamp(Math.round((((x-rect.left)/rect.width)*1440)/snap)*snap,0,1435);
+  }
+
+  async function saveWindow(block,start,end){
+    const id=block.dataset.windowId;
+    const endpoint=windowEndpointTemplate.replace(/0\/timing$/,`${id}/timing`);
+    const body=new URLSearchParams({csrf_token:csrfToken,start_hhmm:toTime(start),end_hhmm:toTime(end)});
+    const response=await fetch(endpoint,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/x-www-form-urlencoded;charset=UTF-8"},body:body.toString()});
+    const result=await response.json();
+    if(!response.ok||!result.ok)throw new Error(result.error||{{ t('automation.save_window_failed')|tojson }});
+    location.reload();
+  }
+
+  document.querySelectorAll(".automation-window-block[data-part='full']").forEach(block=>{
+    const track=block.closest(".automation-track");
+    let mode=null,startX=0,origStart=0,origEnd=0,previewStart=0,previewEnd=0;
+    const left=block.querySelector(".window-handle.start");
+    const right=block.querySelector(".window-handle.end");
+
+    function begin(event,kind){
+      mode=kind;startX=event.clientX;origStart=toMin(block.dataset.start);origEnd=toMin(block.dataset.end);
+      previewStart=origStart;previewEnd=origEnd;block.classList.add("dragging");block.setPointerCapture(event.pointerId);event.preventDefault();event.stopPropagation();
+    }
+    left.addEventListener("pointerdown",e=>begin(e,"start"));
+    right.addEventListener("pointerdown",e=>begin(e,"end"));
+    block.addEventListener("pointerdown",e=>{if(e.target.closest(".window-handle"))return;begin(e,"move")});
+
+    block.addEventListener("pointermove",event=>{
+      if(!mode)return;
+      const delta=Math.round(((event.clientX-startX)/track.getBoundingClientRect().width*1440)/snap)*snap;
+      if(mode==="move"){
+        const duration=origEnd-origStart;
+        previewStart=clamp(origStart+delta,0,1435);
+        previewEnd=clamp(previewStart+duration,5,1435);
+        if(previewEnd-previewStart!==duration){previewStart=previewEnd-duration}
+      }else if(mode==="start"){
+        previewStart=clamp(origStart+delta,0,origEnd-5);
+      }else{
+        previewEnd=clamp(origEnd+delta,origStart+5,1435);
+      }
+      block.style.left=`${previewStart/1440*100}%`;
+      block.style.width=`${(previewEnd-previewStart)/1440*100}%`;
+      block.querySelector(".window-label").textContent=`${toTime(previewStart)}–${toTime(previewEnd)}`;
+    });
+
+    block.addEventListener("pointerup",async event=>{
+      if(!mode)return;
+      mode=null;block.classList.remove("dragging");
+      try{block.releasePointerCapture(event.pointerId)}catch(_){}
+      try{await saveWindow(block,previewStart,previewEnd)}catch(err){alert(err.message);location.reload()}
+    });
+    block.addEventListener("pointercancel",()=>location.reload());
+  });
+
+  document.querySelectorAll(".automation-marker.advanced").forEach(marker=>{
+    const track=marker.closest(".automation-track");let dragging=false;
+    marker.addEventListener("pointerdown",e=>{dragging=true;marker.setPointerCapture(e.pointerId);marker.classList.add("dragging");e.preventDefault()});
+    marker.addEventListener("pointermove",e=>{
+      if(!dragging)return;
+      const m=minuteFromPointer(track,e.clientX);marker.dataset.preview=m;marker.style.left=`${m/1440*100}%`;marker.querySelector(".automation-marker-time").textContent=toTime(m);
+    });
+    marker.addEventListener("pointerup",async e=>{
+      if(!dragging)return;dragging=false;marker.classList.remove("dragging");
+      const m=Number(marker.dataset.preview??marker.dataset.minute);
+      const endpoint=pointEndpointTemplate.replace(/0\/time$/,`${marker.dataset.ruleId}/time`);
+      const body=new URLSearchParams({csrf_token:csrfToken,time_hhmm:toTime(m)});
+      try{
+        const response=await fetch(endpoint,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/x-www-form-urlencoded;charset=UTF-8"},body:body.toString()});
+        const result=await response.json();if(!response.ok||!result.ok)throw new Error(result.error||{{ t('automation.save_point_failed')|tojson }});location.reload();
+      }catch(err){alert(err.message);location.reload()}
+    });
+  });
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}{{ t('about.title') }}{% endblock %}
+{% block content %}
+<section class="about-page">
+  <div class="about-card">
+    <img class="about-logo"
+         src="{{ url_for('static', filename='wansinn-mark.png', v=config.WANSINN_VERSION) }}"
+         alt="WANSINN">
+
+    <h1>WANSINN</h1>
+    <p class="about-subtitle">Multi-WAN Control</p>
+    <span class="about-version">v{{ config.WANSINN_VERSION }}</span>
+
+    <div class="about-credits">
+      <p>{{ t('about.developed_with_ai') }}</p>
+      <p>{{ t('about.tested_hardware') }}</p>
+      <p class="about-legal">
+        Copyright &copy; 2026 Felix Bornhöft<br>
+        {{ t('about.license') }}
+      </p>
+    </div>
+
+    <p class="about-tagline">Multi-WAN made easy.</p>
+  </div>
+</section>
+{% endblock %}

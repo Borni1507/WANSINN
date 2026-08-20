@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}{{ t('login.title') }} · WANSINN{% endblock %}
+{% block content %}
+<section class="login-panel panel">
+  <small>{{ t('login.protected') }}</small>
+  <h2>{{ t('login.title') }}</h2>
+  <p>{{ t('login.description') }}</p>
+  <form method="post" class="login-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>{{ t('login.username') }}<input name="username" autocomplete="username" required autofocus></label>
+    <label>{{ t('login.password') }}<input type="password" name="password" autocomplete="current-password" required></label>
+    <button type="submit">{{ t('login.submit') }}</button>
+  </form>
+</section>
+{% endblock %}

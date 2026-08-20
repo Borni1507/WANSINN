@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}{{ t('update.title') }} · WANSINN{% endblock %}
+{% block content %}
+<section class="panel update-progress-panel">
+  <span class="eyebrow">SOFTWARE UPDATE</span>
+  <h2>{{ t('update.updating_title') }}</h2>
+  <p>
+    {{ current_version }} → <strong>{{ target_version }}</strong>
+  </p>
+  <div class="update-progress">
+    <span class="update-spinner" aria-hidden="true"></span>
+    <div>
+      <strong id="update-state">{{ t('update.preparing') }}</strong>
+      <small>{{ t('update.unavailable') }}</small>
+    </div>
+  </div>
+  <p class="muted-copy">
+    {{ t('update.auto_retry') }}
+    {{ t('update.rollback_kept') }}
+  </p>
+  <a id="update-retry" class="secondary-link" href="{{ url_for('main.index') }}">{{ t('update.manual_retry') }}</a>
+</section>
+<script>
+(() => {
+  const state = document.getElementById("update-state");
+  const targetVersion = {{ target_version|tojson }};
+  const probeUrl = {{ url_for('main.update_probe')|tojson }};
+  let attempts = 0;
+
+  const checkTarget = async () => {
+    attempts += 1;
+    try {
+      const response = await fetch(`${probeUrl}?t=${Date.now()}`, {
+        cache: "no-store",
+        credentials: "same-origin",
+      });
+      if (response.ok) {
+        const payload = await response.json();
+        if (payload && payload.version === targetVersion) {
+          state.textContent = {{ t('update.reachable')|tojson }};
+          window.location.replace(`/?updated=${encodeURIComponent(targetVersion)}`);
+          return;
+        }
+      }
+    } catch (_) {}
+    state.textContent = `Warte auf WANSINN ${targetVersion} … (${attempts})`;
+    window.setTimeout(checkTarget, 1200);
+  };
+
+  // The worker deliberately waits briefly before stopping the old process.
+  // Start probing immediately, but only the exact target version can finish
+  // the handoff, so a response from the old process can no longer win the race.
+  checkTarget();
+})();
+</script>
+{% endblock %}

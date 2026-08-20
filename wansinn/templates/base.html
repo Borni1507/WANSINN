@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="{{ current_language }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{% block title %}WANSINN{% endblock %}</title>
+  <meta name="theme-color" content="#0b0e14">
+  <link rel="icon" href="{{ url_for('static', filename='favicon.ico', v=config.WANSINN_VERSION) }}" sizes="any">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='wansinn-icon.png', v=config.WANSINN_VERSION) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v=config.WANSINN_VERSION) }}">
+</head>
+<body>
+<header class="site-header">
+  <a class="brand" href="{{ url_for('main.index') }}" aria-label="{{ t('nav.home_aria') }}">
+    <img class="brand-mark" src="{{ url_for('static', filename='wansinn-mark.png', v=config.WANSINN_VERSION) }}" alt="">
+    <span class="brand-copy">
+      <strong>WANSINN</strong>
+      <small>Multi-WAN made easy.</small>
+    </span>
+  </a>
+  <div class="header-actions">
+    <a class="version-link" href="{{ url_for('main.about') }}" title="{{ t('nav.about') }}">v{{ config.WANSINN_VERSION }}</a>
+    {% if g.user %}
+      <span class="user-chip">{{ g.user.username }} · {{ g.user.role }}</span>
+      {% if g.user.role == 'admin' %}
+        <a href="{{ url_for('main.route_config') }}">{{ t('nav.routes') }}</a>
+        <a href="{{ url_for('main.device_management') }}">{{ t('nav.devices') }}</a>
+        <a href="{{ url_for('main.automation_page') }}">{{ t('nav.automation') }}</a>
+        <a href="{{ url_for('main.settings_hub') }}">{{ t('nav.settings') }}</a>
+      {% endif %}
+      <form method="post" action="{{ url_for('auth.logout') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="link-button">{{ t('nav.logout') }}</button>
+      </form>
+    {% endif %}
+  </div>
+</header>
+<main>
+  {% with messages=get_flashed_messages(with_categories=true) %}
+    {% for c,m in messages %}<div class="flash {{c}}">{{m}}</div>{% endfor %}
+  {% endwith %}
+  {% block content %}{% endblock %}
+</main>
+<script id="wansinn-working-state">
+document.addEventListener("submit", event => {
+  const form = event.target;
+  if (!(form instanceof HTMLFormElement)) return;
+  form.classList.add("is-working");
+  const submitter = event.submitter;
+  if (submitter) submitter.classList.add("is-working-button");
+});
+</script>
+</body>
+</html>

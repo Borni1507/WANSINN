@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}{{ t('router_config.title') }} · WANSINN{% endblock %}
+{% block content %}
+<section class="panel">
+  <div class="panel-head">
+    <div>
+      <span class="eyebrow">ROUTER</span>
+      <h2>{{ t('router_config.title') }}</h2>
+      <p class="muted-copy">{{ t('router_config.subtitle') }}</p>
+    </div>
+    <a class="secondary-link back-arrow" href="{{ url_for('main.settings_hub') }}">←</a>
+  </div>
+
+  <form method="post" action="{{ url_for('main.update_router_config') }}" class="router-config-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <label>{{ t('router_config.addon') }}
+      <select name="addon" id="router-addon" required>
+        {% for item in addon_choices %}
+        <option value="{{ item.id }}" {% if item.id == current_addon %}selected{% endif %}>{{ item.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <label>{{ t('router_config.router_ip') }}
+      <input name="host" value="{{ router_host }}" required>
+    </label>
+
+    <label>{{ t('router_config.ssh_user') }}
+      <input name="router_user" value="{{ router_user }}" required>
+    </label>
+
+    <label>{{ t('router_config.ssh_port') }}
+      <input name="port" type="number" min="1" max="65535" value="{{ router_port }}" required>
+    </label>
+
+    <label class="router-config-wide">{{ t('router_config.ssh_password') }}
+      <input name="router_password" type="password" autocomplete="new-password"
+             placeholder="{{ t('router_config.password_placeholder') }}">
+      <span class="muted-copy">{{ t('router_config.password_help') }}</span>
+    </label>
+
+    <div id="router-glinet-takeover" class="router-config-wide muted-copy" style="border:2px solid #d33;padding:12px;">
+      <strong>{{ t('glinet_takeover.title') }}</strong><br>
+      {{ t('glinet_takeover.config_text') | safe }}
+      <label style="display:block;margin-top:8px;">
+        <input type="checkbox" name="glinet_takeover_ack" value="1"> {{ t('glinet_takeover.config_ack') }}
+      </label>
+    </div>
+
+    <div class="router-config-meta router-config-wide">
+      <span><strong>SSH-Key:</strong> {{ ssh_key }}</span>
+      <span><strong>Known Hosts:</strong> {{ known_hosts }}</span>
+    </div>
+
+    <div class="router-config-actions router-config-wide">
+      <button class="config-button primary" name="action" value="save">{{ t('router_config.test_save') }}</button>
+    </div>
+  </form>
+  <script>
+  (() => {
+    const select = document.getElementById('router-addon');
+    const box = document.getElementById('router-glinet-takeover');
+    if (!select || !box) return;
+    const sync = () => { box.style.display = select.value === 'glinet' ? 'block' : 'none'; };
+    select.addEventListener('change', sync); sync();
+  })();
+  </script>
+</section>
+{% endblock %}

@@ -1,0 +1,517 @@
+{% extends "base.html" %}
+{% block title %}{{ t('routes.title') }} · WANSINN{% endblock %}
+{% block content %}
+
+
+
+<section class="panel wan-topology-panel">
+  <div class="panel-head">
+    <div>
+      <span class="eyebrow">PROFILE</span>
+      <div class="managed-outputs-title-row">
+        <h2>{{ t('routes.outputs') }}</h2>
+        <a class="route-profile-add-button"
+           href="{{ url_for('main.new_route_profile_page') }}"
+           aria-label="{{ t('routes.add_profile') }}"
+           title="{{ t('routes.add_profile') }}">+</a>
+      </div>
+      <p class="muted-copy">
+        {{ t('routes.intro') }}
+        {{ t('routes.intro2') }}
+      </p>
+    </div>
+  </div>
+
+  <div class="wan-columns" style="--wan-count:{{ profiles|length }}">
+    {% for p in profiles %}
+      <article class="wan-column {{ 'profile-disabled' if not p.enabled else '' }}"
+               style="--profile-color:{{ p.color }}">
+        <header class="wan-column-head">
+          <div class="wan-title-line">
+            <span class="profile-dot"></span>
+            <div>
+              <strong>{{ p.label }}</strong>
+              <code>{{ p.profile_id }}</code>
+              {% if not p.managed %}
+                <small class="muted-copy">{{ t('routes.discovered_candidate') }}</small>
+              {% endif %}
+            </div>
+          </div>
+          <span class="health-pill {{ p.health_status }}">
+            {{ p.health_status|upper }}
+          </span>
+        </header>
+
+        <div class="wan-facts">
+          <div>
+            <span>Gateway</span>
+            <strong>{{ p.gateway or t('routes.not_detected') }}</strong>
+          </div>
+          <div>
+            <span>{{ t('routes.health_target') }}</span>
+            <strong>{{ p.health_target }}</strong>
+          </div>
+          <div>
+            <span>{{ t('routes.last_check') }}</span>
+            <strong class="wan-last-check">{{ p.health_last_check or t('routes.never') }}</strong>
+          </div>
+        </div>
+
+        <div class="wan-section">
+          <span class="wan-section-title">HEALTHCHECK</span>
+          <form class="wan-health-form"
+                method="post"
+                action="{{ url_for('main.update_route_health', profile_id=p.profile_id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+            <label>{{ t('routes.target_ip') }}
+              <input name="health_target" value="{{ p.health_target }}" required>
+            </label>
+
+            <label>Intervall
+              <div class="input-with-unit">
+                <input type="number" name="health_interval" min="2" max="300"
+                       value="{{ p.health_interval }}" required>
+                <span>s</span>
+              </div>
+              <small>{{ t('routes.check_interval_help') }}</small>
+            </label>
+
+            <label>Ping-Timeout
+              <div class="input-with-unit">
+                <input type="number" name="health_timeout" min="1" max="10"
+                       value="{{ p.health_timeout }}" required>
+                <span>s</span>
+              </div>
+              <small>{{ t('routes.ping_wait_help') }}</small>
+            </label>
+
+            <div class="wan-thresholds">
+              <label>Fails → DOWN
+                <input type="number" name="fail_threshold" min="1" max="10"
+                       value="{{ p.fail_threshold }}" required>
+              </label>
+              <label>OKs → UP
+                <input type="number" name="recover_threshold" min="1" max="10"
+                       value="{{ p.recover_threshold }}" required>
+              </label>
+            </div>
+
+            <button type="submit">{{ t('routes.save_health') }}</button>
+          </form>
+
+          <form method="post"
+                action="{{ url_for('main.test_route_health', profile_id=p.profile_id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="wan-test-button">{{ t('routes.test_now') }}</button>
+          </form>
+        </div>
+
+        <div class="wan-section wan-profile-admin">
+          <span class="wan-section-title">{{ t('routes.profile_eyebrow') }}</span>
+
+
+          <form class="wan-profile-name-form" method="post"
+                action="{{ url_for('main.update_route_label', profile_id=p.profile_id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label>
+              <span>{{ t('routes.profile_name') }}</span>
+              <input type="text" name="label" value="{{ p.label }}"
+                     maxlength="64" required>
+            </label>
+            <button>{{ t('routes.save_name') }}</button>
+          </form>
+
+          <form class="wan-color-form" method="post"
+                action="{{ url_for('main.update_route_color', profile_id=p.profile_id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label>
+              <span>{{ t('routes.line_color') }}</span>
+              <input type="color" name="color" value="{{ p.color }}">
+            </label>
+            <button>{{ t('routes.save_color') }}</button>
+          </form>
+
+          <div class="profile-lifecycle">
+            {% if p.enabled %}
+              <form method="post"
+                    action="{{ url_for('main.set_route_profile_enabled', profile_id=p.profile_id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="enabled" value="0">
+                <label>
+                  <span>{{ t('routes.references_on_disable') }}</span>
+                  <select name="replacement">
+                    <option value="">{{ t('routes.migrate_later') }}</option>
+                    {% for target in profiles %}
+                      {% if target.profile_id != p.profile_id and target.enabled %}
+                        <option value="{{ target.profile_id }}">{{ target.label }}</option>
+                      {% endif %}
+                    {% endfor %}
+                    <option value="offline">⛔ OFFLINE</option>
+                  </select>
+                </label>
+                <button class="danger-action"
+                        onclick="return confirm({{ t('routes.disable_confirm', label=p.label)|tojson }});">
+                  {{ t('routes.disable') }}
+                </button>
+              </form>
+            {% else %}
+              <div class="disabled-warning">{{ t('routes.disabled') }}</div>
+              <form method="post"
+                    action="{{ url_for('main.set_route_profile_enabled', profile_id=p.profile_id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="enabled" value="1">
+                <button class="primary">{{ t('routes.enable') }}</button>
+              </form>
+              <form method="post"
+                    action="{{ url_for('main.migrate_route_profile', profile_id=p.profile_id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <label>
+                  <span>Verbliebene Referenzen ersetzen durch</span>
+                  <select name="replacement" required>
+                    {% for target in profiles %}
+                      {% if target.profile_id != p.profile_id and target.enabled %}
+                        <option value="{{ target.profile_id }}">{{ target.label }}</option>
+                      {% endif %}
+                    {% endfor %}
+                    <option value="offline">⛔ OFFLINE</option>
+                  </select>
+                </label>
+                <button>{{ t('routes.replace_all') }}</button>
+              </form>
+            {% endif %}
+          </div>
+
+          <form method="post"
+                action="{{ url_for('main.delete_route_profile', profile_id=p.profile_id) }}"
+                onsubmit="return confirm('{{ t('routes.delete_confirm') }}');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="danger-action wan-delete-button">{{ t('routes.delete_profile') }}</button>
+          </form>
+        </div>
+
+        <div class="wan-cable" aria-hidden="true">
+          <span></span>
+        </div>
+      </article>
+    {% else %}
+      <div class="empty-state">{{ t('routes.no_profiles') }}</div>
+    {% endfor %}
+  </div>
+
+  {% if profiles %}
+  <div class="router-topology">
+    <div class="router-bus" aria-hidden="true"></div>
+
+    <div class="router-node">
+      <div class="router-icon" aria-hidden="true">
+        <span></span><span></span><span></span>
+      </div>
+      <div>
+        <span class="eyebrow">ROUTER</span>
+        <strong>{{ addon_info.name if addon_info and addon_info.name else 'WANSINN Router' }}</strong>
+        <small>{{ t('routes.central_node') }}</small>
+      </div>
+    </div>
+
+    <div class="client-trunk" aria-hidden="true"></div>
+
+    <div class="client-summary">
+      <div>
+        <span>{{ t('routes.devices') }}</span>
+        <strong>{{ client_summary.total }}</strong>
+      </div>
+      <div>
+        <span>AUTO</span>
+        <strong>{{ client_summary.auto }}</strong>
+      </div>
+      <div>
+        <span>Fest</span>
+        <strong>{{ client_summary.fixed }}</strong>
+      </div>
+      <div class="{{ 'client-offline' if client_summary.offline else '' }}">
+        <span>OFFLINE</span>
+        <strong>{{ client_summary.offline }}</strong>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <div>
+      <span class="eyebrow">{{ t('routes.auto_states') }}</span>
+      <h2>{{ t('automation.redundancy_scenarios') }}</h2>
+      <p class="muted-copy">
+        {{ t('routes.state_intro') }}
+        {{ t('routes.state_intro2') }}
+        {{ t('routes.save_once') }}
+      </p>
+    </div>
+  </div>
+
+  {% if managed_profiles %}
+    <details class="new-state-box">
+      <summary>+ {{ t('routes.new_state') }}</summary>
+      <form class="scenario-card scenario-new"
+            method="post"
+            action="{{ url_for('main.create_auto_state') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <div class="scenario-head">
+          <label>
+            <span>{{ t('routes.state_name') }}</span>
+            <input name="name" placeholder="WAN ausgefallen" required>
+          </label>
+        </div>
+
+        <div class="scenario-availability">
+          {% for p in managed_profiles %}
+            <label class="wan-box" style="--profile-color:{{ p.color }}">
+              <input type="checkbox" name="available_{{ p.profile_id }}">
+              <span class="profile-dot"></span>
+              <span>{{ p.label }}</span>
+              <b>{{ t('routes.available') }}</b>
+            </label>
+          {% endfor %}
+        </div>
+
+        <div class="scenario-table">
+          <div class="scenario-table-head">
+            <span>{{ t('routes.device') }}</span>
+            <span>Ziel-WAN</span>
+          </div>
+          {% for d in devices %}
+            <label class="scenario-row missing-assignment scenario-device-row {% if d.wan_profile != 'auto' %}manual-profile-active{% endif %}"
+                   data-device-name="{{ d.name|lower }}"
+                   data-device-ip="{{ d.ip }}">
+              <span>
+                <strong>{{ d.name }}</strong>
+                <small>{{ d.ip }}</small>
+                {% if d.wan_profile != 'auto' %}
+                  <em class="scenario-manual-warning">
+                    {{ t('routes.manual_active_hint', profile=d.wan_profile|upper) }}
+                  </em>
+                {% endif %}
+              </span>
+              <select class="assignment-select missing" name="device_{{ d.id }}">
+                <option value="">⚠ {{ t('routes.no_assignment') }}</option>
+                {% for p in managed_profiles %}
+                  <option value="{{ p.profile_id }}">{{ p.label }}</option>
+                {% endfor %}
+                <option value="offline">⛔ OFFLINE</option>
+              </select>
+            </label>
+          {% else %}
+            <p>{{ t('routes.no_auto_devices') }}</p>
+          {% endfor %}
+        </div>
+
+        <button class="config-button primary">{{ t('routes.save_state') }}</button>
+      </form>
+    </details>
+  {% endif %}
+
+  {% if states and devices %}
+  <div class="scenario-device-search">
+    <label for="scenario-device-search-input">
+      <span>{{ t('routes.search_device') }}</span>
+      <input id="scenario-device-search-input"
+             type="search"
+             placeholder="{{ t('routes.search_name_ip') }}"
+             autocomplete="off">
+    </label>
+    <button id="scenario-device-search-clear" type="button">{{ t('routes.reset') }}</button>
+    <small id="scenario-device-search-status">
+      {{ t('routes.show_all') }}
+    </small>
+  </div>
+  {% endif %}
+
+  {% if states %}
+  <form id="save-all-auto-states"
+        method="post"
+        action="{{ url_for('main.save_all_auto_states') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  </form>
+  {% endif %}
+
+  <div class="scenario-list">
+    {% for s in states %}
+      <article class="scenario-card {{ 'current-state' if s.availability_key == current_key else '' }}">
+
+        <div class="scenario-head">
+          <label>
+            <span>{{ t('routes.state_name') }}</span>
+            <input form="save-all-auto-states" name="state_{{ s.id }}_name" value="{{ s.name }}" required>
+          </label>
+          <div class="scenario-status">
+            {% if s.availability_key == current_key %}
+              <b>{{ t('routes.current_state') }}</b>
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="scenario-availability">
+          {% for p in managed_profiles %}
+            {% set token = p.profile_id ~ '=1' %}
+            <label class="wan-box" style="--profile-color:{{ p.color }}">
+              <input
+                type="checkbox"
+                form="save-all-auto-states" name="state_{{ s.id }}_available_{{ p.profile_id }}"
+                {% if token in s.availability_key.split(',') %}checked{% endif %}
+              >
+              <span class="profile-dot"></span>
+              <span>{{ p.label }}</span>
+              <b>{{ t('routes.available') }}</b>
+            </label>
+          {% endfor %}
+        </div>
+
+        <div class="scenario-table">
+          <div class="scenario-table-head">
+            <span>{{ t('routes.device') }}</span>
+            <span>Ziel-WAN</span>
+          </div>
+          {% for d in devices %}
+            {% set mapped = mappings.get(s.id, {}).get(d.id) %}
+            <label class="scenario-row scenario-device-row {{ 'missing-assignment' if not mapped else '' }} {% if d.wan_profile != 'auto' %}manual-profile-active{% endif %}"
+                   data-device-name="{{ d.name|lower }}"
+                   data-device-ip="{{ d.ip }}">
+              <span>
+                <strong>{{ d.name }}</strong>
+                <small>{{ d.ip }}</small>
+                {% if d.wan_profile != 'auto' %}
+                  <em class="scenario-manual-warning">
+                    {{ t('routes.manual_active_hint', profile=d.wan_profile|upper) }}
+                  </em>
+                {% endif %}
+              </span>
+              <select class="assignment-select {{ 'missing' if not mapped else '' }}" form="save-all-auto-states" name="state_{{ s.id }}_device_{{ d.id }}">
+                <option value="">⚠ {{ t('routes.no_assignment') }}</option>
+                {% for p in managed_profiles %}
+                  <option
+                    value="{{ p.profile_id }}"
+                    {% if mapped == p.profile_id %}selected{% endif %}
+                  >{{ p.label }}</option>
+                {% endfor %}
+                <option value="offline" {% if mapped == 'offline' %}selected{% endif %}>⛔ OFFLINE</option>
+              </select>
+            </label>
+          {% endfor %}
+        </div>
+
+      </article>
+
+      <div class="scenario-secondary-actions">
+        <form class="bulk-replace-form" method="post"
+              action="{{ url_for('main.replace_auto_state_profile', state_id=s.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <select name="source" required>
+            <option value="">{{ t('routes.choose_x') }}</option>
+            {% for p in managed_profiles %}<option value="{{ p.profile_id }}">{{ p.label }}</option>{% endfor %}
+          </select>
+          <span>→</span>
+          <select name="target" required>
+            <option value="">{{ t('routes.choose_y') }}</option>
+            {% for p in managed_profiles %}{% if p.enabled %}<option value="{{ p.profile_id }}">{{ p.label }}</option>{% endif %}{% endfor %}
+            <option value="offline">⛔ OFFLINE</option>
+          </select>
+          <button>{{ t('routes.replace_all') }}</button>
+        </form>
+
+        <form method="post"
+              action="{{ url_for('main.duplicate_auto_state', state_id=s.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button>{{ t('routes.duplicate_state') }}</button>
+        </form>
+        <form method="post"
+              action="{{ url_for('main.delete_auto_state', state_id=s.id) }}"
+              onsubmit="return confirm({{ t('routes.delete_state_confirm', name=s.name)|tojson }});">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="danger-action">{{ t('routes.delete_state') }}</button>
+        </form>
+      </div>
+    {% else %}
+      <div class="empty-state">{{ t('routes.no_states') }}</div>
+    {% endfor %}
+  </div>
+
+  {% if states %}
+    <div class="scenario-save-all">
+      <button class="config-button primary"
+              type="submit"
+              form="save-all-auto-states">
+        {{ t('routes.save_all') }}
+      </button>
+      <small>{{ t('routes.save_all_help') }}</small>
+    </div>
+  {% endif %}
+</section>
+
+<script>
+(() => {
+  function refreshAssignment(select) {
+    const missing = !select.value;
+    select.classList.toggle("missing", missing);
+    const row = select.closest(".scenario-row");
+    if (row) row.classList.toggle("missing-assignment", missing);
+  }
+
+  document.querySelectorAll(".assignment-select").forEach(select => {
+    refreshAssignment(select);
+    select.addEventListener("change", () => refreshAssignment(select));
+  });
+
+  const input = document.getElementById("scenario-device-search-input");
+  const clear = document.getElementById("scenario-device-search-clear");
+  const status = document.getElementById("scenario-device-search-status");
+
+  if (!input || !clear || !status) return;
+
+  const rows = [...document.querySelectorAll(".scenario-device-row")];
+
+  function applyFilter() {
+    const query = input.value.trim().toLowerCase();
+    let visibleRows = 0;
+    const visibleDevices = new Set();
+
+    rows.forEach(row => {
+      const name = (row.dataset.deviceName || "").toLowerCase();
+      const ip = (row.dataset.deviceIp || "").toLowerCase();
+      const match = !query || name.includes(query) || ip.includes(query);
+
+      row.hidden = !match;
+
+      if (match) {
+        visibleRows += 1;
+        visibleDevices.add(`${name}|${ip}`);
+      }
+    });
+
+    if (!query) {
+      status.textContent = "{{ t('routes.show_all') }}";
+    } else if (visibleDevices.size) {
+      status.textContent =
+        `${visibleDevices.size} ${visibleDevices.size === 1 ? 'device' : 'devices'} found · ` +
+        `{{ t('routes.search_rows_status', count='__COUNT__') }}`.replace('__COUNT__', visibleRows);
+    } else {
+      status.textContent = {{ t('routes.no_auto_match')|tojson }};
+    }
+  }
+
+  input.addEventListener("input", applyFilter);
+  input.addEventListener("search", applyFilter);
+
+  clear.addEventListener("click", () => {
+    input.value = "";
+    applyFilter();
+    input.focus();
+  });
+
+  applyFilter();
+})();
+</script>
+
+{% endblock %}

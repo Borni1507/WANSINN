@@ -1,0 +1,330 @@
+{% extends "base.html" %}
+{% from '_icons.html' import icon %}
+{% block content %}
+
+<section class="stats">
+  <article><span>{{ t('nav.devices')|upper }}</span><strong>{{counts.total}}</strong></article>
+  {% for p in profiles %}<article><span>{{p.label}}</span><strong>{{counts.get(p.id,0)}}</strong></article>{% endfor %}
+</section>
+
+<section class="panel device-panel">
+  <div class="device-panel-head">
+    <div>
+      <small>WAN CONTROL</small>
+      <h2>{{ t('nav.devices') }}</h2>
+    </div>
+    <div class="device-toolbar">
+      <label class="device-search">
+        <span class="sr-only">{{ t('devices.search') }}</span>
+        <input id="device-search" type="search" placeholder="{{ t('devices.search') }} …" autocomplete="off">
+      </label>
+      <label class="device-sort">
+        <span class="sr-only">{{ t('home.sort_devices') }}</span>
+        <select id="device-sort">
+          <option value="name-asc">Name A–Z</option>
+          <option value="name-desc">Name Z–A</option>
+          <option value="ip-asc">{{ t('devices.sort_ip_asc') }}</option>
+          <option value="ip-desc">{{ t('devices.sort_ip_desc') }}</option>
+          <option value="profile-asc">{{ t('index.state') }}</option>
+        </select>
+      </label>
+</div>
+  </div>
+  <div id="device-empty-filter" class="empty-state device-filter-empty" hidden>
+    {{ t('home.no_search') }}
+  </div>
+  <div id="device-collection" class="grid device-collection" data-view="cards">
+    {% for d in devices %}
+    <article
+      class="card device-card {{ 'offline' if d.wan_profile == 'offline' else '' }}"
+      data-name="{{ d.name|lower }}"
+      data-ip="{{ d.ip }}"
+      data-mac="{{ (d.mac or '')|lower }}"
+      data-note="{{ (d.note or '')|lower }}"
+      data-profile="{{ d.wan_profile|lower }}"
+      data-effective-profile="{{ d.effective_profile|lower }}"
+      {% if profile_colors.get(d.effective_profile) %}
+      style="--effective-profile-color:{{ profile_colors.get(d.effective_profile) }}"
+      {% endif %}
+    >
+      <div class="title device-title">
+        <div class="device-identity-main">{{ icon(d.device_type or "desktop","device-type-icon") }}<h3>{{d.name}}</h3><code class="device-ip">{{d.ip}}</code>{% if d.mac %}<small class="mac-id device-mac">{{ d.mac }}</small>{% endif %}</div>
+        <div class="device-state-stack">
+          {% if d.wan_profile == 'auto' %}
+            <b class="device-mode-badge auto-mode">AUTO</b>
+            <span class="device-effective-badge" {% if profile_colors.get(d.effective_profile) %}style="--profile-color:{{ profile_colors.get(d.effective_profile) }}"{% endif %}>
+              {{ profile_map.get(d.effective_profile).label if profile_map.get(d.effective_profile) else d.effective_profile|upper }}
+            </span>
+          {% else %}
+            <b class="device-mode-badge manual-mode">MANUELL</b>
+            <span class="device-effective-badge" {% if profile_colors.get(d.effective_profile) %}style="--profile-color:{{ profile_colors.get(d.effective_profile) }}"{% endif %}>
+              {{ profile_map.get(d.effective_profile).label if profile_map.get(d.effective_profile) else d.effective_profile|upper }}
+            </span>
+          {% endif %}
+        </div>
+      </div>
+      {% if d.note %}<p>{{d.note}}</p>{% endif %}
+      {% if g.user.role in ('admin', 'operator') %}
+      {% if d.wan_profile == 'offline' and g.user.role != 'admin' %}
+        <div class="operator-offline-lock">
+          <strong>⛔ OFFLINE</strong>
+          <small>Kann nur durch einen Administrator aufgehoben werden.</small>
+        </div>
+      {% else %}
+      <form class="switch device-profile-switch" method="post" action="{{url_for('main.set_profile',i=d.id)}}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% for p in profiles %}
+          {% if p.id != 'offline' and not (p.id == 'auto' and d.router_imported) %}
+            <button
+              name="profile"
+              value="{{p.id}}"
+              class="{{'active '~p.id if d.wan_profile==p.id else ''}}"
+              {% if profile_colors.get(p.id) %}style="--profile-color:{{ profile_colors.get(p.id) }}"{% endif %}
+            >{{p.label}}</button>
+          {% endif %}
+        {% endfor %}
+      </form>
+      {% if d.router_imported %}
+        <small class="fixed-router-policy-note">{{ t('home.auto_note') }}</small>
+      {% endif %}
+      {% endif %}
+
+      {% if g.user.role == 'admin' %}
+      <div class="offline-zone">
+        {% if d.wan_profile == 'offline' %}
+          <div class="offline-state">
+            <span>⛔ OFFLINE</span>
+            <small>Internetzugang bewusst gesperrt</small>
+          </div>
+        {% else %}
+          <button
+            type="button"
+            class="offline-trigger"
+            onclick="document.getElementById('offline-dialog-{{ d.id }}').showModal()"
+          >
+            ⛔ OFFLINE
+          </button>
+        {% endif %}
+      </div>
+
+      <dialog id="offline-dialog-{{ d.id }}" class="offline-dialog">
+        <form method="post" action="{{ url_for('main.set_offline', i=d.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <span class="danger-kicker">KRITISCHE AKTION</span>
+          <h3>{{ t('home.block_device') }}</h3>
+          <p>
+            <strong>{{ d.name }}</strong> ({{ d.ip }}) wird vom Internet getrennt.
+          </p>
+          <p class="offline-warning">
+            Aktive Downloads, Uploads, Streams, SSH-, VPN- und andere
+            {{ t('home.services_break') }}
+          </p>
+          <p>
+            {{ t('home.internal_targets') }}
+            <code>internal-networks</code> erreichbar.
+          </p>
+          <label>
+            {{ t('home.admin_confirm') }}
+            <input
+              type="password"
+              name="password"
+              autocomplete="current-password"
+              required
+              autofocus
+            >
+          </label>
+          <div class="offline-dialog-actions">
+            <button
+              type="button"
+              onclick="this.closest('dialog').close()"
+            >{{ t('common.cancel') }}</button>
+            <button type="submit" class="offline-confirm">
+              {{ t('home.offline') }}
+            </button>
+          </div>
+        </form>
+      </dialog>
+      {% endif %}
+
+
+      <div class="actions device-actions">
+        <form method="post" action="{{url_for('main.sync',i=d.id)}}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button>{{ t('home.read_router') }}</button>
+        </form>
+      </div>
+      {% else %}
+      <p class="readonly">Nur-Lese-Zugriff</p>
+      {% endif %}
+    </article>
+    {% else %}
+    <p>{{ t('devices.none') }}</p>
+    {% endfor %}
+  </div>
+</section>
+<script>
+(() => {
+  const collection = document.getElementById("device-collection");
+  const search = document.getElementById("device-search");
+  const sort = document.getElementById("device-sort");
+  const empty = document.getElementById("device-empty-filter");
+  const toggles = [...document.querySelectorAll(".view-toggle")];
+  if (!collection || !search || !sort) return;
+
+  const storage = { view: "wansinn.deviceView", sort: "wansinn.deviceSort" };
+  const cards = () => [...collection.querySelectorAll(".device-card")];
+
+  const normalizeIp = ip =>
+    ip.split(".").map(part => String(Number(part)).padStart(3, "0")).join(".");
+
+  function applyFilter() {
+    const q = search.value.trim().toLowerCase();
+    let visible = 0;
+    cards().forEach(card => {
+      const haystack = [
+        card.dataset.name || "",
+        card.dataset.ip || "",
+        card.dataset.mac || "",
+        card.dataset.note || "",
+        card.dataset.profile || ""
+      ].join(" ");
+      const match = !q || haystack.includes(q);
+      card.hidden = !match;
+      if (match) visible++;
+    });
+    empty.hidden = visible !== 0;
+  }
+
+  function applySort() {
+    const mode = sort.value;
+    const list = cards();
+    list.sort((a, b) => {
+      let av, bv;
+      if (mode.startsWith("ip-")) {
+        av = normalizeIp(a.dataset.ip || "");
+        bv = normalizeIp(b.dataset.ip || "");
+      } else if (mode.startsWith("profile-")) {
+        av = a.dataset.profile || "";
+        bv = b.dataset.profile || "";
+      } else {
+        av = a.dataset.name || "";
+        bv = b.dataset.name || "";
+      }
+      let result = av.localeCompare(bv, undefined, {numeric: true, sensitivity: "base"});
+      if (mode.endsWith("-desc")) result *= -1;
+      return result;
+    });
+    list.forEach(card => collection.appendChild(card));
+  }
+
+    const savedSort =   if (savedSort && [...sort.options].some(o => o.value === savedSort)) {
+    sort.value = savedSort;
+  }
+
+  setView(savedView);
+  applySort();
+  applyFilter();
+
+  search.addEventListener("input", applyFilter);
+  sort.addEventListener("change", () => {
+        applySort();
+    applyFilter();
+  });
+  toggles.forEach(btn => btn.addEventListener("click", () => setView(btn.dataset.view)));
+})();
+</script>
+
+<script>
+(() => {
+  document.querySelectorAll("[data-group-profile-form]").forEach(form => {
+    const select = form.querySelector("[data-group-profile-select]");
+    const password = form.querySelector("[data-group-offline-password]");
+    const row = form.querySelector("[data-group-offline-row]");
+    if (!select || !password || !row) return;
+
+    function syncOfflinePassword() {
+      const offline = select.value === "offline";
+      row.hidden = !offline;
+      password.required = offline;
+      if (!offline) password.value = "";
+    }
+
+    select.addEventListener("change", syncOfflinePassword);
+    syncOfflinePassword();
+  });
+})();
+</script>
+
+
+<script>
+(() => {
+  const search = document.getElementById('device-search');
+  const sort = document.getElementById('device-sort');
+  const box = document.getElementById('device-collection');
+  if (!box) return;
+
+  const cards = [...box.querySelectorAll(".device-card")];
+
+  function applyFilter() {
+    const q = (search?.value || "").trim().toLocaleLowerCase();
+    for (const card of cards) {
+      const haystack = [
+        card.dataset.name || "",
+        card.dataset.ip || "",
+        card.dataset.mac || "",
+        card.dataset.note || "",
+        card.dataset.profile || "",
+        card.dataset.effectiveProfile || ""
+      ].join(" ").toLocaleLowerCase();
+
+      card.hidden = !!q && !haystack.includes(q);
+    }
+  }
+
+  function compare(a, b, mode) {
+    const nameA = (a.dataset.name || "").toLocaleLowerCase();
+    const nameB = (b.dataset.name || "").toLocaleLowerCase();
+    const ipA = a.dataset.ip || "";
+    const ipB = b.dataset.ip || "";
+    const profileA = (a.dataset.effectiveProfile || a.dataset.profile || "").toLocaleLowerCase();
+    const profileB = (b.dataset.effectiveProfile || b.dataset.profile || "").toLocaleLowerCase();
+
+    if (mode === "name-desc") return nameB.localeCompare(nameA, undefined, {numeric:true});
+    if (mode === "ip-asc") return ipA.localeCompare(ipB, undefined, {numeric:true});
+    if (mode === "ip-desc") return ipB.localeCompare(ipA, undefined, {numeric:true});
+    if (mode === "state" || mode === "profile") {
+      const p = profileA.localeCompare(profileB);
+      return p || nameA.localeCompare(nameB, undefined, {numeric:true});
+    }
+    return nameA.localeCompare(nameB, undefined, {numeric:true});
+  }
+
+  function normalizeMode(value) {
+    const v = (value || "").toLocaleLowerCase();
+    if (v.includes("z") && v.includes("a")) return "name-desc";
+    if (v.includes("ip") && (v.includes("ab") || v.includes("desc"))) return "ip-desc";
+    if (v.includes("ip")) return "ip-asc";
+    if (v.includes("zustand") || v.includes("state") || v.includes("wan") || v.includes("profil") || v.includes("profile")) return "state";
+    return "name-asc";
+  }
+
+  function applySort() {
+    const mode = normalizeMode(sort?.value || "name-asc");
+    cards.sort((a,b) => compare(a,b,mode));
+    for (const card of cards) box.appendChild(card);
+  }
+
+  if (search) {
+    search.addEventListener("input", applyFilter);
+    search.addEventListener("search", applyFilter);
+  }
+  if (sort) {
+    sort.addEventListener("change", applySort);
+  }
+
+  applySort();
+  applyFilter();
+})();
+</script>
+
+{% endblock %}

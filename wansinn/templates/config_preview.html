@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}Importvorschau · WANSINN{% endblock %}
+{% block content %}
+<section class="panel">
+  <div class="panel-head">
+    <div>
+      <span class="eyebrow">IMPORTVORSCHAU</span>
+      <h2>{{ t('preview.check') }}</h2>
+    </div>
+    <a class="secondary-link back-arrow" href="{{ url_for('main.config_page') }}" aria-label="{{ t('config.back') }}" title="{{ t('config.back') }}">←</a>
+  </div>
+
+  {% if errors %}
+    <div class="import-section error-section">
+      <h3>{{ t('preview.invalid') }}</h3>
+      <ul>{% for error in errors %}<li>{{ error }}</li>{% endfor %}</ul>
+    </div>
+  {% else %}
+    <div class="import-summary import-summary-wide">
+      <article><span>{{ t('preview.wan_new') }}</span><strong>{{ new_profiles|length }}</strong></article>
+      <article><span>{{ t('preview.wan_changed') }}</span><strong>{{ updated_profiles|length }}</strong></article>
+      <article><span>{{ t('preview.devices_new') }}</span><strong>{{ new_devices|length }}</strong></article>
+      <article><span>{{ t('preview.devices_changed') }}</span><strong>{{ updates|length }}</strong></article>
+      <article><span>{{ t('preview.auto_states') }}</span><strong>{{ auto_states|length }}</strong></article>
+    </div>
+
+    {% if source_installation %}
+      <div class="import-section">
+        <h3>Quellinstallation · nur Information</h3>
+        <div class="import-row">
+          <strong>Management</strong>
+          <code>{{ source_installation.get('management_ip') or '—' }}</code>
+          <span>{{ t('config_preview.not_imported') }}</span>
+        </div>
+        <div class="import-row">
+          <strong>Testing</strong>
+          <code>{{ source_installation.get('testing_ip') or '—' }}</code>
+          <span>{{ t('config_preview.not_imported') }}</span>
+        </div>
+      </div>
+    {% endif %}
+
+    {% if new_profiles or updated_profiles %}
+      <div class="import-section">
+        <h3>WAN-Profile</h3>
+        {% for item in new_profiles %}
+          <div class="import-row">
+            <strong>NEU · {{ item.label }}</strong>
+            <code>{{ item.id }}</code>
+            <span>{{ item.gateway }} · Health {{ item.health_target }}</span>
+          </div>
+        {% endfor %}
+        {% for item in updated_profiles %}
+          <div class="import-row">
+            <strong>{{ t('preview.change') }} · {{ item.label }}</strong>
+            <code>{{ item.id }}</code>
+            <span>{{ item.gateway }} · Health {{ item.health_target }}</span>
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    {% if new_devices or updates %}
+      <div class="import-section">
+        <h3>{{ t('common.devices_count') }}</h3>
+        {% for item in new_devices %}
+          <div class="import-row">
+            <strong>NEU · {{ item.name }}</strong>
+            <code>{{ item.ip }}</code>
+            <span>{{ item.profile|upper }} · {{ item.note or t('config_preview.no_note') }}</span>
+          </div>
+        {% endfor %}
+        {% for item in updates %}
+          <div class="import-row">
+            <strong>{{ t('preview.change') }} · {{ item.name }}</strong>
+            <code>{{ item.ip }}</code>
+            <span>{{ item.profile|upper }} · {{ item.note or t('config_preview.no_note') }}</span>
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    {% if auto_states %}
+      <div class="import-section">
+        <h3>AUTO-Redundanz</h3>
+        {% for state in auto_states %}
+          <div class="import-state-preview">
+            <strong>{{ state.name }}</strong>
+            <span>{{ state.devices|length }} {{ t('preview.device_assignments') }}</span>
+            <code>
+              {% for profile_id, available in state.availability.items() %}
+                {{ profile_id }}={{ 'UP' if available else 'DOWN' }}{% if not loop.last %}, {% endif %}
+              {% endfor %}
+            </code>
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    <div class="import-section warning-section">
+      <h3>Importmodus</h3>
+      <p>
+        <strong>Merge</strong> {{ t('preview.merge_desc1') }}
+        WAN-Profile werden angelegt, vorhandene passende Profile aktualisiert,
+        {{ t('common.devices_count') }} {{ t('preview.merge_desc2') }}
+      </p>
+      <p>
+        <strong>{{ t('preview.replace_all') }}</strong> {{ t('preview.replace_desc1') }} {{ t('common.devices_count') }} {{ t('preview.replace_desc2') }}
+        {{ t('preview.replace_desc3') }}
+        {{ t('preview.replace_desc4') }}
+      </p>
+    </div>
+
+    <div class="config-import-recommendation">
+      <strong>KONFIGURATION ERSETZEN:</strong>
+      <span>EMPFOHLEN BEI NEUINSTALLATION</span>
+    </div>
+
+    <form class="import-actions"
+          method="post"
+          action="{{ url_for('main.import_config_apply') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <textarea name="payload" hidden>{{ imported_payload }}</textarea>
+      <button name="mode" value="new-only">{{ t('preview.only_missing') }}</button>
+      <button name="mode" value="merge" class="primary">
+        {{ t('preview.merge') }}
+      </button>
+      <button name="mode"
+              value="replace"
+              class="danger-action"
+              onclick="return confirm({{ t('preview.replace_confirm')|tojson }});">
+        {{ t('preview.replace') }}
+      </button>
+    </form>
+  {% endif %}
+</section>
+{% endblock %}

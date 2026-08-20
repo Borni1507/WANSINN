@@ -1,0 +1,193 @@
+{% extends "base.html" %}
+{% block title %}{{ t('config.title') }} · WANSINN
+{% endblock %}
+{% block content %}
+<section class="panel">
+  <div class="panel-head">
+    <div>
+      <span class="eyebrow">{{ t('config.portable_eyebrow') }}</span>
+      <h2>WANSINN.cfg</h2>
+      <p class="muted-copy">{{ t('config.backup_description') }}</p>
+    </div>
+    <a class="secondary-link back-arrow" href="{{ url_for('main.index') }}" aria-label="{{ t('config.back') }}" title="{{ t('config.back') }}">←</a>
+  </div>
+
+  <div class="config-grid">
+    <article class="config-card">
+      <span class="eyebrow">{{ t('config.export_eyebrow') }}</span>
+      <h3>{{ t('config.backup_title') }}</h3>
+      <p>
+        {{ t('config.export_desc') }}
+        {{ t('config.export_desc2') }}
+        {{ t('config.export_offline_suffix') }}
+      </p>
+      <p>
+        {{ t('config.ip_info') }}
+        {{ t('config.ip_info2') }}
+      </p>
+      <a class="config-button primary" href="{{ url_for('main.export_config') }}">
+        {{ t('config.export_download') }}
+      </a>
+    </article>
+
+    <article class="config-card">
+      <span class="eyebrow">{{ t('config.import_eyebrow') }}</span>
+      <h3>{{ t('config.restore_title') }}</h3>
+      <p>
+        {{ t('config.validation_intro') }}
+        {{ t('config.validation_intro2') }}
+        {{ t('config.import_create_suffix') }}
+      </p>
+      <form method="post"
+            action="{{ url_for('main.import_config_preview') }}"
+            enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label>WANSINN.cfg
+          <div class="translated-file-input"><input type="file"
+                 name="config_file"
+                 accept=".cfg,application/json"
+                 required id="wansinn-file-1" class="native-file-input-hidden"><label for="wansinn-file-1" class="file-input-button">{{ t("config.choose_file") }}</label><span class="file-input-name" data-file-name-for="wansinn-file-1">{{ t("config.file_selected_none") }}</span></div>
+        </label>
+        <button class="config-button primary" type="submit">{{ t('config.check_file') }}</button>
+      </form>
+    </article>
+  </div>
+
+
+  <article class="config-card api-card">
+    <span class="eyebrow">{{ t('config.local_api_eyebrow') }}</span>
+    <h3>{{ t('config.remote_control_title') }}</h3>
+    <p>
+      {{ t('config.api_desc') }}
+      {{ t('config.api_desc2') }}
+    </p>
+
+    {% if new_api_token %}
+      <div class="api-token-reveal">
+        <strong>{{ t('config.copy_token_now') }}</strong>
+        <code id="api-token-value">{{ new_api_token }}</code>
+        <button type="button"
+                onclick="navigator.clipboard.writeText(document.getElementById('api-token-value').textContent)">
+          {{ t('config.copy') }}
+        </button>
+        <small>{{ t('config.token_once') }}</small>
+      </div>
+    {% endif %}
+
+    {% if api_token %}
+      <div class="api-token-status">
+        <span class="status-dot online"></span>
+        <div>
+          <strong>{{ t('config.api_active') }}</strong>
+          <small>
+            {{ api_token.token_prefix }}… · {{ t('config.created_at', date=api_token.created_at) }}
+            {% if api_token.last_used_at %} · {{ t('config.last_used_at', date=api_token.last_used_at) }}{% endif %}
+          </small>
+        </div>
+      </div>
+      <div class="api-token-actions">
+        <form method="post"
+              action="{{ url_for('main.generate_api_token') }}"
+              onsubmit="return confirm('{{ t('config.api_replace_confirm') }}');">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit">{{ t('config.rotate_token') }}</button>
+        </form>
+        <form method="post"
+              action="{{ url_for('main.revoke_api_token') }}"
+              onsubmit="return confirm('{{ t('config.api_disable_confirm') }}');">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="danger-action" type="submit">{{ t('config.revoke_token') }}</button>
+        </form>
+      </div>
+    {% else %}
+      <form method="post" action="{{ url_for('main.generate_api_token') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="config-button primary" type="submit">{{ t('config.generate_api_token') }}</button>
+      </form>
+    {% endif %}
+
+    <div class="api-example">
+      <span>{{ t('common.example') }}</span>
+      <code>GET /api/v1/devices</code>
+      <code>POST /api/v1/devices/3/profile {"profile":"auto"}</code>
+    </div>
+    <p class="muted-copy">
+      {{ t('config.authentication') }} <code>Authorization: Bearer &lt;TOKEN&gt;</code>.
+      {{ t('config.offline_hint') }} <code>"confirm_offline": true</code>.
+      {{ t('config.token_hint') }}
+    </p>
+  </article>
+
+  
+
+  
+
+  <article class="config-card update-card">
+    <span class="eyebrow">{{ t('config.software_update_eyebrow') }}</span>
+    <h3>{{ t('config.update_title') }}</h3>
+    <p>
+      {{ t('config.update_select') }}
+      {{ t('config.update_select2') }}
+      {{ t('config.update_select3') }}
+    </p>
+    <p>
+      {{ t('config.rollback_hint') }}
+      {{ t('config.no_internet_required') }}
+    </p>
+    <form method="post"
+          action="{{ url_for('main.install_update') }}"
+          enctype="multipart/form-data"
+          onsubmit="return confirm('{{ t('config.update_confirm') }}');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label>{{ t('config.update_zip_label') }}
+        <div class="translated-file-input"><input type="file"
+               name="update_file"
+               accept=".zip,application/zip"
+               required id="wansinn-file-2" class="native-file-input-hidden"><label for="wansinn-file-2" class="file-input-button">{{ t("config.choose_file") }}</label><span class="file-input-name" data-file-name-for="wansinn-file-2">{{ t("config.file_selected_none") }}</span></div>
+      </label>
+      <button class="config-button primary" type="submit">{{ t('config.install_update') }}</button>
+    </form>
+  </article>
+
+  <div class="config-safety-note">
+    <strong>{{ t('config.not_in_backup') }}</strong>
+    {{ t('config.secrets') }}
+  </div>
+</section>
+
+<script id="translated-file-input-script">
+(() => {
+  const initTranslatedFileInputs = () => {
+    document.querySelectorAll('.translated-file-input').forEach((wrapper) => {
+      const input = wrapper.querySelector('input[type="file"]');
+      const output = wrapper.querySelector('.file-input-name');
+      if (!input || !output || input.dataset.filenameBound === "1") return;
+
+      input.dataset.filenameBound = "1";
+      const emptyLabel = {{ t('config.file_selected_none')|tojson }};
+
+      const refreshFileName = () => {
+        if (input.files && input.files.length) {
+          output.textContent = Array.from(input.files)
+            .map(file => file.name)
+            .join(', ');
+          output.dataset.empty = "0";
+        } else {
+          output.textContent = emptyLabel;
+          output.dataset.empty = "1";
+        }
+      };
+
+      input.addEventListener('change', refreshFileName);
+      refreshFileName();
+    });
+  };
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initTranslatedFileInputs, {once:true});
+  } else {
+    initTranslatedFileInputs();
+  }
+})();
+</script>
+{% endblock %}

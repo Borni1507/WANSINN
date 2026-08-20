@@ -1,0 +1,24 @@
+{
+  "id": "mikrotik",
+  "name": "MikroTik RouterOS",
+  "vendor": "MikroTik",
+  "version": "0.5.0",
+  "entrypoint": "MikroTikAddon",
+  "description": "Multi-WAN über RouterOS 7 und SSH",
+  "capabilities": [
+    "device-policy-routing",
+    "diagnostics",
+    "health-checks",
+    "wan-profiles",
+    "offline-policy",
+    "first-run-bootstrap",
+    "profile-discovery",
+    "route-profile-config",
+    "route-profile-delete",
+    "auto-states",
+    "profile-colors",
+    "auto-health",
+    "local-probe-routing",
+    "device-discovery"
+  ]
+}

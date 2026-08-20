@@ -1,0 +1,21 @@
+{
+  "id": "glinet",
+  "name": "GL.iNet / OpenWrt",
+  "vendor": "GL.iNet",
+  "version": "0.9.1-3",
+  "entrypoint": "GLiNetAddon",
+  "description": "GL.iNet/OpenWrt Exclusive Control with router-side LAN/VLAN device observation, recovery snapshot, fail-closed PBR and WANSINN-owned AUTO",
+  "capabilities": [
+    "diagnostics",
+    "health-checks",
+    "wan-profiles",
+    "profile-discovery",
+    "router-profile-probe",
+    "manual-device-policy-routing",
+    "auto-device-policy-routing",
+    "fail-closed-device-policy-routing",
+    "offline-policy",
+    "exclusive-routing-control",
+    "device-discovery"
+  ]
+}

@@ -1,0 +1,5 @@
+{% extends "base.html" %}
+{% block title %}{{ t('error.403_title') }} · WANSINN{% endblock %}
+{% block content %}
+<section class="panel"><h2>{{ t('error.403_title') }}</h2><p>{{ t('error.403_text') }}</p><a href="{{ url_for('main.index') }}">{{ t('error.back_dashboard') }}</a></section>
+{% endblock %}

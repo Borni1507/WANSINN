@@ -11,7 +11,7 @@ Current hardware support includes MikroTik and GL.iNet/OpenWrt-based
 testing.
 
 > **Project status:** WANSINN is still under active development. Expect
-> changes and rough edges.
+> changes, rough edges, and the occasional router-related adventure.
 
 ## What WANSINN does
 

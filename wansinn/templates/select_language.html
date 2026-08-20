@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Select Language · WANSINN</title>
+  <meta name="theme-color" content="#0b0e14">
+  <link rel="icon" href="{{ url_for('static', filename='favicon.ico', v=config.WANSINN_VERSION) }}" sizes="any">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v=config.WANSINN_VERSION) }}">
+</head>
+<body class="language-gate-page">
+  <main class="language-gate-wrap">
+    <section class="language-gate panel" aria-labelledby="language-title">
+      <img class="language-gate-mark" src="{{ url_for('static', filename='wansinn-mark.png', v=config.WANSINN_VERSION) }}" alt="">
+      <div>
+        <small>WANSINN</small>
+        <h1 id="language-title">Select Language</h1>
+      </div>
+      <form method="post" class="language-gate-options">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" name="language" value="de" autofocus>
+          <strong>Deutsch</strong>
+        </button>
+        <button type="submit" name="language" value="en">
+          <strong>English</strong>
+        </button>
+      </form>
+    </section>
+  </main>
+</body>
+</html>

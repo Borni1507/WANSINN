@@ -1,0 +1,459 @@
+{% extends "base.html" %}
+{% block title %}{{ t('logs.title') }} · WANSINN{% endblock %}
+{% block content %}
+
+<section class="panel logs-diagnostics">
+  <div class="panel-head">
+    <div>
+      <span class="eyebrow">{{ t('logs.diagnostics') }}</span>
+      <h2>{{ t('logs.system_state') }}</h2>
+      <p class="muted-copy">{{ t('logs.system_state_desc') }}</p>
+    </div>
+  </div>
+  <div class="auto-state-diagnostic">
+  <span>{{ t('logs.auto_state') }}</span>
+  {% if current_auto_state %}
+    <strong>{{ t('logs.used', name=current_auto_state.name) }}</strong>
+  {% elif current_auto_key %}
+    <strong class="warning-text">{{ t('logs.no_state') }}</strong>
+  {% else %}
+    <strong>{{ t('logs.no_health') }}</strong>
+  {% endif %}
+</div>
+
+<section id="medic-hero" class="panel medic-hero medic-loading">
+  <div class="medic-title-row">
+    <div>
+      <small>WANSINN MEDIC</small>
+      <h2 id="medic-overall">{{ t('logs.checking') }}</h2>
+      <p id="medic-progress">{{ t('logs.interface_ready') }}</p>
+    </div>
+    <div class="medic-pulse loading" aria-hidden="true">✚</div>
+  </div>
+
+  <div class="health-summary">
+    <span class="health-count ok"><b id="count-ok">0</b> OK</span>
+    <span class="health-count warning"><b id="count-warning">0</b> {{ t('logs.warnings') }}</span>
+    <span class="health-count error"><b id="count-error">0</b> {{ t('logs.errors') }}</span>
+    <span class="health-count unknown"><b id="count-unknown">0</b> {{ t('logs.unknown') }}</span>
+  </div>
+
+  <div class="medic-meta">
+    <span>{{ addon_info.name }} · Add-on v{{ addon_info.version }}</span>
+    <span id="medic-checked-at">{{ t('logs.check_running') }}</span>
+    <button id="medic-recheck" class="secondary-link" type="button">{{ t('logs.recheck') }}</button>
+    
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <div>
+      <small>{{ t('logs.health_checks') }}</small>
+      <h2>{{ t('logs.details') }}</h2>
+    </div>
+  </div>
+
+  <div id="health-grid" class="health-grid progressive-health-grid">
+    <div id="health-grid-loading" class="empty-state">{{ t('logs.router_loading') }}</div>
+  </div>
+</section>
+
+<section class="panel">
+  <details id="raw-details">
+    <summary>{{ t('logs.raw_show') }}</summary>
+    <div id="raw-loading" class="raw-loading">{{ t('logs.raw_lazy') }}</div>
+    <div id="raw-diagnostics" class="diagnostic-grid raw-diagnostics" hidden></div>
+  </details>
+</section>
+
+
+<script id="wansinn-logs-i18n-runtime">
+window.WANSINN_LOGS_I18N = {
+  loading_state: {{ t('logs.loading')|tojson }},
+  router_loading: {{ t('logs.router_loading')|tojson }},
+  router_failed: {{ t('logs.router_failed')|tojson }},
+  not_run: {{ t('logs.not_run')|tojson }},
+  checked_at: {{ t('logs.checked_at', time='{time}')|tojson }},
+  skipped_ssh: {{ t('logs.skipped_ssh')|tojson }},
+  check_failed: {{ t('logs.check_failed', error='{error}')|tojson }},
+  skipped: {{ t('logs.skipped')|tojson }},
+  db_running: {{ t('logs.db_running')|tojson }},
+  raw_loading: {{ t('diagnostics.raw_loading')|tojson }},
+  raw_failed: {{ t('logs.raw_failed', error='{error}')|tojson }},
+  shown: {{ t('logs.shown', shown='{shown}', total='{total}')|tojson }},
+  load_failed: {{ t('logs.load_failed')|tojson }},
+  log_error: {{ t('logs.log_error', error='{error}')|tojson }},
+  error_state: {{ t('logs.error_state')|tojson }},
+  progress: {{ t('logs.progress', done='{done}', total='{total}')|tojson }},
+  raw_labels: {
+    connection: {{ t('health.ssh')|tojson }},
+    system: "System",
+    routing_tables: {{ t('health.routing_tables')|tojson }},
+    routes: {{ t('diagnostics.default_routes')|tojson }},
+    nat_rules: "NAT",
+    mangle_rules: "Mangle",
+    filter_rules: "Filter",
+    address_lists: {{ t('health.provider_lists')|tojson }}
+  }
+};
+
+window.wansinnFormat = function(template, values) {
+  return String(template ?? "").replace(/\{([a-zA-Z0-9_]+)\}/g, (match, key) =>
+    Object.prototype.hasOwnProperty.call(values, key) ? String(values[key]) : match
+  );
+};
+</script>
+
+<script>
+(() => {
+  const I18N = window.WANSINN_LOGS_I18N;
+  const fmt = window.wansinnFormat;
+  const routerUrl = {{ url_for('main.diagnostics_router_checks')|tojson }};
+  const databaseUrl = {{ url_for('main.diagnostics_database_check')|tojson }};
+  const rawUrl = {{ url_for('main.diagnostics_raw')|tojson }};
+  const supportsDevicePolicy = {{ ('device-policy-routing' in addon_info.capabilities)|tojson }};
+
+  const grid = document.getElementById("health-grid");
+  const state = new Map();
+  const cards = new Map();
+
+  function ensureCard(check) {
+    let card = cards.get(check.id);
+    if (card) return card;
+
+    const loading = document.getElementById("health-grid-loading");
+    if (loading) loading.remove();
+
+    card = document.createElement("article");
+    card.className = "health-card loading";
+    card.dataset.checkId = check.id;
+    card.innerHTML = `
+      <div class="health-card-head">
+        <span class="health-dot"></span>
+        <div>
+          <h3></h3>
+          <p></p>
+        </div>
+        <strong class="health-card-status loading" data-status="loading"></strong>
+      </div>
+      <ul hidden></ul>
+    `;
+    grid.appendChild(card);
+    cards.set(check.id, card);
+    return card;
+  }
+
+  function renderCheck(check) {
+    const card = ensureCard(check);
+    state.set(check.id, check.status);
+
+    card.className = `health-card ${check.status}`;
+    card.querySelector("h3").textContent = check.label || check.id;
+    card.querySelector("p").textContent = check.message || "";
+
+    const status = card.querySelector(".health-card-status");
+    status.className = `health-card-status ${check.status}`;
+    status.dataset.status = check.status;
+    status.textContent = String(check.status || "unknown").toUpperCase();
+
+    const ul = card.querySelector("ul");
+    ul.innerHTML = "";
+    if (check.details?.length) {
+      for (const detail of check.details) {
+        const li = document.createElement("li");
+        li.textContent = detail;
+        ul.appendChild(li);
+      }
+      ul.hidden = false;
+    } else {
+      ul.hidden = true;
+    }
+
+    updateSummary();
+  }
+
+  function renderFailure(message) {
+    renderCheck({
+      id: "medic-error",
+      label: {{ t('health.addon')|tojson }},
+      status: "error",
+      message,
+      details: []
+    });
+  }
+
+  function updateSummary() {
+    const counts = {ok:0, warning:0, error:0, unknown:0};
+    for (const status of state.values()) {
+      if (status in counts) counts[status]++;
+    }
+
+    for (const [name, value] of Object.entries(counts)) {
+      document.getElementById(`count-${name}`).textContent = value;
+    }
+
+    const overall = document.getElementById("medic-overall");
+    const hero = document.getElementById("medic-hero");
+    const total = state.size;
+
+    if (counts.error) {
+      overall.textContent = "DEGRADED";
+      hero.className = "panel medic-hero degraded";
+    } else if (counts.warning || counts.unknown) {
+      overall.textContent = "ATTENTION";
+      hero.className = "panel medic-hero attention";
+    } else if (total > 0) {
+      overall.textContent = "HEALTHY";
+      hero.className = "panel medic-hero healthy";
+    }
+
+    document.getElementById("medic-progress").textContent =
+      fmt(I18N.progress, {done: total, total});
+  }
+
+  async function loadChecks() {
+    document.getElementById("medic-progress").textContent = I18N.router_loading;
+
+    try {
+      const response = await fetch(routerUrl, {
+        cache:"no-store",
+        credentials:"same-origin"
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || I18N.router_failed);
+      }
+
+      for (const check of data.checks || []) {
+        renderCheck(check);
+      }
+
+      document.getElementById("medic-checked-at").textContent =
+        fmt(I18N.checked_at, {
+          time: new Date(data.checked_at).toLocaleString()
+        });
+
+      const ssh = (data.checks || []).find(check => check.id === "ssh");
+      if (supportsDevicePolicy && ssh?.status !== "error") {
+        await loadDatabaseCheck();
+      }
+    } catch (error) {
+      renderFailure(fmt(I18N.check_failed, {error:error.message}));
+    }
+  }
+
+  async function loadDatabaseCheck() {
+    document.getElementById("medic-progress").textContent = I18N.db_running;
+    try {
+      const response = await fetch(databaseUrl, {
+        cache:"no-store",
+        credentials:"same-origin"
+      });
+      const data = await response.json();
+      if (data.check) renderCheck(data.check);
+    } catch (error) {
+      renderCheck({
+        id:"database-sync",
+        label:{{ t('health.db_sync')|tojson }},
+        status:"unknown",
+        message:fmt(I18N.check_failed, {error:error.message}),
+        details:[]
+      });
+    }
+  }
+
+  async function loadRaw() {
+    const loading = document.getElementById("raw-loading");
+    const rawGrid = document.getElementById("raw-diagnostics");
+    if (!loading || !rawGrid || rawGrid.dataset.loaded === "1") return;
+
+    loading.textContent = I18N.raw_loading;
+    try {
+      const response = await fetch(rawUrl, {
+        cache:"no-store",
+        credentials:"same-origin"
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || I18N.raw_failed);
+      }
+
+      rawGrid.innerHTML = "";
+      const labels = I18N.raw_labels || {};
+      for (const [key, value] of Object.entries(data.raw || {})) {
+        const article = document.createElement("article");
+        const h3 = document.createElement("h3");
+        const pre = document.createElement("pre");
+        h3.textContent = labels[key] || key.replaceAll("_", " ");
+        pre.textContent = typeof value === "string"
+          ? value
+          : Array.isArray(value)
+            ? value.join("\n")
+            : JSON.stringify(value, null, 2);
+        article.append(h3, pre);
+        rawGrid.appendChild(article);
+      }
+
+      rawGrid.hidden = false;
+      rawGrid.dataset.loaded = "1";
+      loading.hidden = true;
+    } catch (error) {
+      loading.textContent = fmt(I18N.raw_failed, {error:error.message});
+    }
+  }
+
+  const rawDetails = document.getElementById("raw-details");
+  if (rawDetails) {
+    rawDetails.addEventListener("toggle", event => {
+      if (event.currentTarget.open) loadRaw();
+    });
+  }
+
+  const recheck = document.getElementById("medic-recheck");
+  if (recheck) {
+    recheck.addEventListener("click", () => location.reload());
+  }
+
+  loadChecks();
+})();
+</script>
+</section>
+
+
+<section class="panel log-panel">
+  <div class="panel-head log-panel-head">
+    <div>
+      <span class="eyebrow">WANSINN LOG</span>
+      <h2>{{ t('logs.live_title') }}</h2>
+      <p class="muted-copy">
+        {{ t('logs.live_desc') }}
+      </p>
+    </div>
+    <div class="log-live-state">
+      <span class="log-live-dot"></span>
+      <strong id="log-live-label">LIVE</strong>
+    </div>
+  </div>
+
+  <div class="log-toolbar">
+    <label>
+      <span>{{ t('logs.level') }}</span>
+      <select id="log-level">
+        <option value="">{{ t('logs.all') }}</option>
+        <option value="ERROR">ERROR</option>
+        <option value="WARNING">WARNING</option>
+        <option value="INFO">INFO</option>
+        <option value="DEBUG">DEBUG</option>
+      </select>
+    </label>
+
+    <label>
+      <span>{{ t('logs.source_text') }}</span>
+      <input id="log-source" type="search"
+             placeholder="AUTO, MANUAL, discovery, health …"
+             autocomplete="off">
+    </label>
+
+    <label>
+      <span>{{ t('logs.lines') }}</span>
+      <select id="log-limit">
+        <option value="200">200</option>
+        <option value="400" selected>400</option>
+        <option value="800">800</option>
+      </select>
+    </label>
+
+    <label class="log-follow-toggle">
+      <input id="log-follow" type="checkbox" checked>
+      <span>{{ t('logs.follow') }}</span>
+    </label>
+
+    <button id="log-refresh" type="button">{{ t('logs.refresh') }}</button>
+  </div>
+
+  <div id="log-status" class="log-status">{{ t('logs.log_loading') }}</div>
+  <pre id="log-view" class="log-view" aria-live="polite"></pre>
+
+  <p class="log-rotation-note">
+    {{ t('logs.rotation') }}
+  </p>
+</section>
+
+<script>
+(() => {
+  const I18N = window.WANSINN_LOGS_I18N;
+  const fmt = window.wansinnFormat;
+  const endpoint = {{ url_for('main.logs_tail')|tojson }};
+  const view = document.getElementById("log-view");
+  const status = document.getElementById("log-status");
+  const level = document.getElementById("log-level");
+  const source = document.getElementById("log-source");
+  const limit = document.getElementById("log-limit");
+  const follow = document.getElementById("log-follow");
+  const refresh = document.getElementById("log-refresh");
+  const liveLabel = document.getElementById("log-live-label");
+
+  let rawLines = [];
+  let loading = false;
+
+  function parseLevel(line) {
+    const match = line.match(/\s(DEBUG|INFO|WARNING|ERROR|CRITICAL):/);
+    return match ? match[1] : "";
+  }
+
+  function render() {
+    const wantedLevel = level.value;
+    const needle = source.value.trim().toLowerCase();
+
+    const filtered = rawLines.filter(line => {
+      if (wantedLevel && parseLevel(line) !== wantedLevel) return false;
+      if (needle && !line.toLowerCase().includes(needle)) return false;
+      return true;
+    });
+
+    view.innerHTML = "";
+    for (const line of filtered) {
+      const span = document.createElement("span");
+      const lineLevel = parseLevel(line);
+      span.className = `log-line ${lineLevel.toLowerCase()}`;
+      span.textContent = line + "\n";
+      view.appendChild(span);
+    }
+
+    status.textContent = fmt(I18N.shown, {shown: filtered.length, total: rawLines.length});
+    if (follow.checked) view.scrollTop = view.scrollHeight;
+  }
+
+  async function load() {
+    if (loading) return;
+    loading = true;
+    liveLabel.textContent = I18N.loading_state;
+    try {
+      const response = await fetch(`${endpoint}?limit=${encodeURIComponent(limit.value)}`, {
+        cache: "no-store",
+        credentials: "same-origin"
+      });
+      const data = await response.json();
+      if (!data.ok) throw new Error(data.error || I18N.load_failed);
+      rawLines = data.lines || [];
+      render();
+      liveLabel.textContent = "LIVE";
+    } catch (error) {
+      status.textContent = fmt(I18N.log_error, {error: error.message});
+      liveLabel.textContent = I18N.error_state;
+    } finally {
+      loading = false;
+    }
+  }
+
+  level.addEventListener("change", render);
+  source.addEventListener("input", render);
+  limit.addEventListener("change", load);
+  refresh.addEventListener("click", load);
+
+  load();
+  setInterval(load, 2000);
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,92 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+import ipaddress, json, subprocess, sys
+
+def fail(message, code=1):
+    print(message, file=sys.stderr)
+    raise SystemExit(code)
+
+def run(*args):
+    r = subprocess.run(args, capture_output=True, text=True, check=False)
+    if r.returncode:
+        fail((r.stderr or r.stdout).strip() or "Netzwerkbefehl fehlgeschlagen.")
+    return r.stdout
+
+def addr_info():
+    try:
+        return json.loads(run("ip", "-j", "addr", "show"))
+    except json.JSONDecodeError:
+        fail("Lokale Interface-Daten konnten nicht gelesen werden.")
+
+def find_management(management_ip):
+    target = ipaddress.ip_address(management_ip)
+    if target.version != 4 or not target.is_private:
+        fail("Management-IP muss eine private IPv4-Adresse sein.")
+    for iface in addr_info():
+        for info in iface.get("addr_info", []):
+            if info.get("family") == "inet" and info.get("local") == management_ip:
+                return iface["ifname"], int(info["prefixlen"])
+    fail(f"Management-IP {management_ip} ist auf diesem Rechner nicht konfiguriert.")
+
+def validate_test_ip(test_ip, management_ip, prefixlen):
+    test = ipaddress.ip_address(test_ip)
+    mgmt = ipaddress.ip_address(management_ip)
+    if test.version != 4 or not test.is_private:
+        fail("Testing-IP muss eine private IPv4-Adresse sein.")
+    if test == mgmt:
+        fail("Testing-IP darf nicht der Management-IP entsprechen.")
+    network = ipaddress.ip_network(f"{management_ip}/{prefixlen}", strict=False)
+    if test not in network:
+        fail(f"Testing-IP muss im Management-Netz {network} liegen.")
+    if test in {network.network_address, network.broadcast_address}:
+        fail("Netz- oder Broadcast-Adresse ist als Testing-IP nicht zulässig.")
+
+def add_test_ip(management_ip, test_ip):
+    iface, prefixlen = find_management(management_ip)
+    validate_test_ip(test_ip, management_ip, prefixlen)
+
+    for item in addr_info():
+        for info in item.get("addr_info", []):
+            if info.get("family") == "inet" and info.get("local") == test_ip:
+                if item["ifname"] == iface:
+                    print(json.dumps({"ok": True, "interface": iface, "prefixlen": prefixlen, "existing": True}))
+                    return
+                fail(f"Testing-IP ist bereits auf Interface {item['ifname']} konfiguriert.")
+
+    ping = subprocess.run(
+        ["ping", "-c", "1", "-W", "1", test_ip],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False
+    )
+    if ping.returncode == 0:
+        fail(f"Testing-IP {test_ip} antwortet bereits im Netz.")
+
+    # Do not use an IPv4 alias label here. Linux limits interface labels to
+    # IFNAMSIZ and modern predictable interface names can already be near that
+    # limit. Appending ":wansinn" then fails with:
+    #   Error: Attribute failed policy validation.
+    #
+    # The extra address is unambiguous without a label and removal already
+    # targets the exact IP/prefix, so the label provides no functional value.
+    run("ip", "addr", "add", f"{test_ip}/{prefixlen}", "dev", iface)
+    print(json.dumps({"ok": True, "interface": iface, "prefixlen": prefixlen, "existing": False}))
+
+def remove_test_ip(management_ip, test_ip):
+    iface, prefixlen = find_management(management_ip)
+    validate_test_ip(test_ip, management_ip, prefixlen)
+    subprocess.run(["ip", "addr", "del", f"{test_ip}/{prefixlen}", "dev", iface],
+                   capture_output=True, text=True, check=False)
+    print(json.dumps({"ok": True, "interface": iface}))
+
+def main():
+    if len(sys.argv) != 4:
+        fail("usage: wansinn-net-helper add|remove MANAGEMENT_IP TESTING_IP")
+    action, management_ip, test_ip = sys.argv[1:]
+    if action == "add":
+        add_test_ip(management_ip, test_ip)
+    elif action == "remove":
+        remove_test_ip(management_ip, test_ip)
+    else:
+        fail("Unbekannte Aktion.")
+
+if __name__ == "__main__":
+    main()

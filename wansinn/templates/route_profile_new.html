@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}{{ t('routes.add_profile') }} · WANSINN{% endblock %}
+{% block content %}
+
+<section class="panel route-profile-new-page">
+  <div class="panel-head">
+    <div>
+      <span class="eyebrow">{{ t('route_new.eyebrow') }}</span>
+      <h2>{{ t('routes.add_profile') }}</h2>
+      <p class="muted-copy">
+        {{ t('route_new.desc') }}
+        {{ t('route_new.desc2') }}
+      </p>
+    </div>
+    <a class="secondary-link back-arrow"
+       href="{{ url_for('main.route_config') }}"
+       aria-label="{{ t('route_new.back') }}"
+       title="{{ t('route_new.back') }}">←</a>
+  </div>
+
+  <article class="config-card route-profile-new-card">
+    <form method="post" action="{{ url_for('main.create_route_profile') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <label>{{ t('route_new.profile_name') }}
+        <input name="name" placeholder="Hauptleitung" required>
+      </label>
+
+      <label>{{ t('route_new.gateway_ip') }}
+        <input name="gateway" placeholder="192.168.1.1" required>
+      </label>
+
+      <label>{{ t('route_new.color') }}
+        <div class="color-field">
+          <input type="color" name="color" value="#0066ff">
+          <span>{{ t('route_new.button_status_color') }}</span>
+        </div>
+      </label>
+
+      <button class="config-button primary">{{ t('route_new.create') }}</button>
+    </form>
+  </article>
+</section>
+
+{% endblock %}

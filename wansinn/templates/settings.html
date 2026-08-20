@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}{{ t('settings.title') }} · WANSINN{% endblock %}
+{% from '_icons.html' import icon %}
+{% block content %}
+
+<section class="panel settings-hub">
+  <div class="panel-head">
+    <div>
+      <span class="eyebrow">{{ t('settings.eyebrow') }}</span>
+      <h2>{{ t('settings.title') }}</h2>
+      <p class="muted-copy">
+        {{ t('settings.description') }}
+      </p>
+    </div>
+    <a class="secondary-link back-arrow"
+       href="{{ url_for('main.index') }}"
+       aria-label="{{ t('common.back') }}"
+       title="{{ t('common.back') }}">←</a>
+  </div>
+
+  <div class="settings-hub-grid">
+    <a class="settings-hub-card" href="{{ url_for('main.config_page') }}">
+      <span class="eyebrow">{{ t('settings.system') }}</span>
+      {{ icon('update','settings-card-icon') }}
+      <h3>{{ t('settings.config_title') }}</h3>
+      <p>{{ t('settings.config_desc') }}</p>
+      <strong>{{ t('common.open') }}</strong>
+    </a>
+
+    <a class="settings-hub-card" href="{{ url_for('main.router_config_page') }}">
+      <span class="eyebrow">{{ t('settings.router') }}</span>
+      {{ icon('router','settings-card-icon') }}
+      <h3>{{ t('settings.router_title') }}</h3>
+      <p>{{ t('settings.router_desc') }}</p>
+      <strong>{{ t('common.open') }}</strong>
+    </a>
+
+    <a class="settings-hub-card" href="{{ url_for('auth.users') }}">
+      <span class="eyebrow">{{ t('settings.access') }}</span>
+      {{ icon('user','settings-card-icon') }}
+      <h3>{{ t('settings.users_title') }}</h3>
+      <p>{{ t('settings.users_desc') }}</p>
+      <strong>{{ t('common.open') }}</strong>
+    </a>
+
+    <a class="settings-hub-card" href="{{ url_for('main.logs_page') }}">
+      <span class="eyebrow">{{ t('settings.diagnostics') }}</span>
+      {{ icon('logs','settings-card-icon') }}
+      <h3>{{ t('settings.logs_title') }}</h3>
+      <p>{{ t('settings.logs_desc') }}</p>
+      <strong>{{ t('common.open') }}</strong>
+    </a>
+
+    <div class="settings-hub-card">
+      <span class="eyebrow">{{ t('settings.language') }}</span>
+      {{ icon('settings','settings-card-icon') }}
+      <h3>{{ t('settings.language_title') }}</h3>
+      <p>{{ t('settings.language_desc') }}</p>
+      <form method="post" action="{{ url_for('main.update_language') }}" class="settings-language-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <select name="language" aria-label="{{ t('settings.language_title') }}">
+          {% for code, label in supported_languages.items() %}
+            <option value="{{ code }}" {% if code == current_language %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit">{{ t('common.save') }}</button>
+      </form>
+    </div>
+  </div>
+</section>
+
+{% endblock %}

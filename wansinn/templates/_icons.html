@@ -1,0 +1,33 @@
+{% macro icon(name, cls='') -%}
+<svg class="ui-icon {{ cls }}" viewBox="0 0 24 24" aria-hidden="true">
+  {% if name == 'desktop' %}
+    <rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>
+  {% elif name == 'laptop' %}
+    <rect x="5" y="4" width="14" height="11" rx="1.5"/><path d="M3 18h18"/>
+  {% elif name == 'server' %}
+    <rect x="4" y="3" width="16" height="6" rx="1.5"/><rect x="4" y="10.5" width="16" height="6" rx="1.5"/><circle cx="7" cy="6" r=".7"/><circle cx="7" cy="13.5" r=".7"/>
+  {% elif name == 'phone' %}
+    <rect x="7.5" y="2.5" width="9" height="19" rx="2"/><path d="M10.5 5h3"/>
+  {% elif name == 'tablet' %}
+    <rect x="5" y="2.5" width="14" height="19" rx="2"/><circle cx="12" cy="18.5" r=".6"/>
+  {% elif name == 'console' %}
+    <path d="M7 9h10l3 7c.7 1.7-1.2 3.2-2.7 2.2L14.5 16h-5l-2.8 2.2C5.2 19.2 3.3 17.7 4 16l3-7Z"/><path d="M8 12v4M6 14h4M15.5 13.5h.01M18 15h.01"/>
+  {% elif name == 'tv' %}
+    <rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8M12 17v4"/>
+  {% elif name == 'iot' %}
+    <path d="M9 18h6M10 22h4"/><path d="M8.2 14.5a6 6 0 1 1 7.6 0c-1.2.9-1.8 1.8-1.8 2.5h-4c0-.7-.6-1.6-1.8-2.5Z"/>
+  {% elif name == 'network' %}
+    <rect x="3" y="8" width="18" height="8" rx="2"/><circle cx="7" cy="12" r=".7"/><circle cx="10" cy="12" r=".7"/><path d="M14 12h4"/>
+  {% elif name == 'update' %}
+    <path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>
+  {% elif name == 'router' %}
+    <rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 9V5M17 9V5"/><circle cx="8" cy="13" r=".7"/><circle cx="11" cy="13" r=".7"/><path d="M15 13h3"/>
+  {% elif name == 'user' %}
+    <circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>
+  {% elif name == 'logs' %}
+    <path d="M6 2h9l3 3v17H6z"/><path d="M14 2v4h4M9 11h6M9 15h6"/>
+  {% else %}
+    <circle cx="12" cy="12" r="8"/><path d="M12 8v4l2 2"/>
+  {% endif %}
+</svg>
+{%- endmacro %}
