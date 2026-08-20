@@ -1,0 +1,48 @@
+# Runtime data
+instance/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+
+# SSH / keys
+*.key
+*.pem
+known_hosts
+id_rsa
+id_ed25519
+id_ecdsa
+
+# Router recovery / generated state
+router-changes/
+*-revert.sh
+
+# Build / release archives
+WANSINN-v*.zip
+*.tar.gz
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
