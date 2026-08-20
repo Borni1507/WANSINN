@@ -91,7 +91,7 @@ than relying only on simulated environments.
 Current testing includes:
 
 -   MikroTik CRS310-1G-5S-4S+
--   GL.iNet / OpenWrt (GL-iNet Flint 2)
+-   GL.iNet / OpenWrt (GL-iNet Flint 2 [GL-MT6000])
 
 Support for additional platforms can be added through the addon system.
 
