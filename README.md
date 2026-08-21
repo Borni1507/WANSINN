@@ -1,4 +1,5 @@
 # WANSINN
+[![GitHub Release](https://img.shields.io/github/v/release/Borni1507/WANSINN?style=for-the-badge)](https://github.com/Borni1507/WANSINN/releases)  [![GitHub Stars](https://img.shields.io/github/stars/Borni1507/WANSINN?style=for-the-badge)](https://github.com/Borni1507/WANSINN/stargazers) [![Issues](https://img.shields.io/github/issues/Borni1507/WANSINN?style=for-the-badge)](https://github.com/Borni1507/WANSINN/issues) [![License](https://img.shields.io/github/license/Borni1507/WANSINN?style=for-the-badge)](LICENSE)
 
 **Multi-WAN control without being locked to a single router platform.**
 
@@ -116,3 +117,19 @@ respective licenses.
 ------------------------------------------------------------------------
 
 **Developed with AI. Tested on real hardware.**
+
+------------------------------------------------------------------------
+
+## Contributors
+
+[![Contributors](https://contrib.rocks/image?repo=Borni1507/WANSINN)](https://github.com/Borni1507/WANSINN/graphs/contributors)
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=borni1507%2FWANSINN&type=timeline&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=borni1507/WANSINN&type=timeline&theme=dark&legend=top-left&sealed_token=G1MVxB6e0PYJ_szDI-MHsyYFAJK_BAJARxYqntfGYFnF04iI1agqm-bFjcz-ASqEzB06cPOsTaXHDZir-G9gbON4ZpyoXi79dcCpLhJ8DcN7ofFQ_8AUpQ" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=borni1507/WANSINN&type=timeline&legend=top-left&sealed_token=G1MVxB6e0PYJ_szDI-MHsyYFAJK_BAJARxYqntfGYFnF04iI1agqm-bFjcz-ASqEzB06cPOsTaXHDZir-G9gbON4ZpyoXi79dcCpLhJ8DcN7ofFQ_8AUpQ" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=borni1507/WANSINN&type=timeline&legend=top-left&sealed_token=G1MVxB6e0PYJ_szDI-MHsyYFAJK_BAJARxYqntfGYFnF04iI1agqm-bFjcz-ASqEzB06cPOsTaXHDZir-G9gbON4ZpyoXi79dcCpLhJ8DcN7ofFQ_8AUpQ" />
+ </picture>
+</a>
