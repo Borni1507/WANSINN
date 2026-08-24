@@ -11,7 +11,7 @@ from pathlib import Path
 from io import BytesIO
 from datetime import datetime, timezone, timedelta
 
-from flask import Blueprint, current_app, redirect, render_template, request, send_file, url_for, g, jsonify, session
+from flask import Blueprint, current_app, redirect, render_template, request, send_file, url_for, g, jsonify, session, flash
 from .i18n import (
     SUPPORTED_LANGUAGES,
     flash_i18n,
@@ -702,6 +702,87 @@ def set_offline(i):
     except Exception as exc:
         current_app.logger.exception("OFFLINE-Aktivierung fehlgeschlagen")
         flash_i18n(f"OFFLINE fehlgeschlagen: {exc}", "error")
+
+    return redirect(url_for("main.index"))
+
+
+@bp.post("/devices/sync-all")
+@roles_required("admin", "operator")
+def sync_all_devices():
+    """Read the current router policy for every managed device.
+
+    AUTO remains a WANSINN control mode: for AUTO devices we only refresh the
+    effective profile observed on the router.  Manual devices adopt the router
+    profile as their selected and effective profile.
+    """
+    db = get_db()
+    devices = db.execute(
+        "SELECT * FROM devices ORDER BY name COLLATE NOCASE"
+    ).fetchall()
+    if not devices:
+        flash(t("home.read_router_none"), "error")
+        return redirect(url_for("main.index"))
+
+    updated = 0
+    protected = 0
+    failures = []
+
+    for device in devices:
+        try:
+            profile = addon().get_device_profile(device["ip"])
+
+            # Operators must never release an administrator-enforced OFFLINE
+            # state merely because the router currently reports something else.
+            if (
+                device["wan_profile"] == "offline"
+                and g.user["role"] != "admin"
+                and profile != "offline"
+            ):
+                protected += 1
+                continue
+
+            if device["wan_profile"] == "auto":
+                db.execute(
+                    "UPDATE devices SET effective_profile=?, updated_at=CURRENT_TIMESTAMP "
+                    "WHERE id=?",
+                    (profile, device["id"]),
+                )
+            else:
+                db.execute(
+                    "UPDATE devices SET wan_profile=?, effective_profile=?, "
+                    "updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                    (profile, profile, device["id"]),
+                )
+            updated += 1
+        except Exception as exc:
+            current_app.logger.warning(
+                "Routerstatus für %s (%s) konnte nicht gelesen werden: %s",
+                device["name"],
+                device["ip"],
+                exc,
+            )
+            failures.append(device["name"])
+
+    db.commit()
+
+    if failures:
+        preview = ", ".join(failures[:5])
+        if len(failures) > 5:
+            preview += f" (+{len(failures) - 5})"
+        flash(
+            t(
+                "home.read_router_partial",
+                updated=updated,
+                failed=len(failures),
+                devices=preview,
+            ),
+            "error",
+        )
+    else:
+        flash(t("home.read_router_all_success", count=updated), "success")
+
+    if protected:
+        flash(t("home.read_router_protected", count=protected), "message")
 
     return redirect(url_for("main.index"))
 

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import ipaddress
 import re
 import subprocess
+import threading
+import time
 from collections import defaultdict
 from pathlib import Path
 
@@ -25,6 +28,16 @@ class MikroTikAddon(RouterAddon):
         self.key = app.config["MIKROTIK_SSH_KEY"]
         self.port = app.config["MIKROTIK_PORT"]
         self.known_hosts = app.config["MIKROTIK_KNOWN_HOSTS"]
+        # RouterOS is perfectly capable of serving several SSH sessions, but
+        # WANSINN may otherwise create a burst of discovery/health/AUTO calls
+        # during a router replacement.  Serialize CLI access and cache the
+        # static profile schema briefly so every device switch does not need
+        # another full mangle-table discovery.
+        self._ssh_lock = threading.RLock()
+        self._profile_cache_lock = threading.RLock()
+        self._profile_cache: dict[str, dict[str, str]] = {}
+        self._profile_cache_at = 0.0
+        self._profile_cache_ttl = 2.0
         self.info = AddonInfo(
             manifest["id"],
             manifest["name"],
@@ -34,12 +47,30 @@ class MikroTikAddon(RouterAddon):
             tuple(manifest.get("capabilities", [])),
         )
 
-    def _discover_profiles(self) -> dict[str, dict[str, str]]:
-        """Discover WAN profiles from RouterOS policy-routing rules.
+    def _invalidate_profile_cache(self) -> None:
+        with self._profile_cache_lock:
+            self._profile_cache = {}
+            self._profile_cache_at = 0.0
 
-        A profile exists when a mangle mark-routing rule maps a `force-*`
-        address list to a routing table. Nothing is hard-coded here.
+    def _discover_profiles(self, *, force: bool = False) -> dict[str, dict[str, str]]:
+        """Discover WANSINN PBR profiles from RouterOS mangle rules.
+
+        Profile definitions change only when a WAN profile is created/deleted.
+        Device switching used to re-read the complete mangle table for every
+        single client.  During large AUTO reconciles this produced a storm of
+        SSH sessions and a transient empty discovery could turn an otherwise
+        valid target into ``Unbekanntes Profil``.  Keep a very short cache and
+        explicitly invalidate it on profile lifecycle changes.
         """
+        now = time.monotonic()
+        with self._profile_cache_lock:
+            if (
+                not force
+                and self._profile_cache
+                and now - self._profile_cache_at < self._profile_cache_ttl
+            ):
+                return {key: dict(value) for key, value in self._profile_cache.items()}
+
         output = self._ssh('/ip firewall mangle print terse')
         discovered: dict[str, dict[str, str]] = {}
         for line in output.splitlines():
@@ -60,6 +91,31 @@ class MikroTikAddon(RouterAddon):
                 "table": table,
                 "label": profile_id.replace("-", " ").upper(),
             }
+
+        # Never replace a known-good cache with a transient empty read.  An
+        # actually empty router is handled correctly on first discovery, while
+        # lifecycle operations invalidate the cache explicitly.
+        with self._profile_cache_lock:
+            if discovered or not self._profile_cache:
+                self._profile_cache = {key: dict(value) for key, value in discovered.items()}
+                self._profile_cache_at = time.monotonic()
+            return {key: dict(value) for key, value in self._profile_cache.items()}
+
+    def _profiles_for_switch(self, profile: str) -> dict[str, dict[str, str]]:
+        """Return a stable profile map and retry discovery once on a miss."""
+        discovered = self._discover_profiles()
+        if profile in {"auto", "offline"} or profile in discovered:
+            return discovered
+
+        # A cache miss may mean a profile was just created or RouterOS returned
+        # a transiently incomplete CLI snapshot.  One forced refresh is enough
+        # to distinguish that from a genuinely unknown profile.
+        discovered = self._discover_profiles(force=True)
+        if profile not in discovered:
+            log.error(
+                "MikroTik: Profil %r nicht gefunden; Router meldet Profile: %s",
+                profile, ", ".join(sorted(discovered)) or "<keine>",
+            )
         return discovered
 
     @staticmethod
@@ -103,6 +159,110 @@ class MikroTikAddon(RouterAddon):
             )
         return profiles
 
+
+    def _ensure_internal_networks(self, profile_gateway: str) -> None:
+        """Ensure the RouterOS ``internal-networks`` safety boundary exists.
+
+        Existing lists are treated as administrator-owned and are never
+        rewritten.  On a fresh RouterOS installation WANSINN creates the list
+        from connected IPv4 networks while excluding networks/interfaces used
+        by default routes and the gateway of the profile currently being
+        created.  This keeps PBR from hijacking traffic to local LAN/VLAN/VPN
+        networks without requiring a pre-existing WANSINN RouterOS setup.
+        """
+        existing = self._ssh(
+            '/ip firewall address-list print terse where list="internal-networks"'
+        )
+        if existing.strip():
+            return
+
+        address_output = self._ssh('/ip address print terse')
+        default_routes = self._ssh(
+            '/ip route print terse where dst-address=0.0.0.0/0'
+        )
+
+        external_gateways: set[ipaddress.IPv4Address] = set()
+        external_interfaces: set[str] = set()
+
+        try:
+            external_gateways.add(ipaddress.IPv4Address(profile_gateway))
+        except ipaddress.AddressValueError:
+            pass
+
+        for line in default_routes.splitlines():
+            for key in ("gateway", "immediate-gw"):
+                value = self._extract_value(line, key)
+                if not value:
+                    continue
+
+                # RouterOS may expose values such as 192.0.2.1%ether1.
+                gateway_part, _, iface_part = value.partition("%")
+                if iface_part:
+                    external_interfaces.add(iface_part)
+
+                try:
+                    external_gateways.add(ipaddress.IPv4Address(gateway_part))
+                except ipaddress.AddressValueError:
+                    # PPP/tunnel default routes can use the interface itself
+                    # as the gateway value.  Treat that interface as external.
+                    if gateway_part:
+                        external_interfaces.add(gateway_part)
+
+        internal_networks: set[ipaddress.IPv4Network] = set()
+        for line in address_output.splitlines():
+            address = self._extract_value(line, "address")
+            interface = self._extract_value(line, "interface") or ""
+            if not address:
+                continue
+
+            try:
+                network = ipaddress.IPv4Interface(address).network
+            except (ipaddress.AddressValueError, ValueError):
+                continue
+
+            if (
+                network.network_address.is_loopback
+                or network.network_address.is_link_local
+                or network.network_address.is_multicast
+                or network.network_address.is_unspecified
+            ):
+                continue
+            if interface and interface in external_interfaces:
+                continue
+            if any(gateway in network for gateway in external_gateways):
+                continue
+
+            internal_networks.add(network)
+
+        if not internal_networks:
+            raise MikroTikError(
+                "Die Router-Liste 'internal-networks' fehlt und WANSINN konnte "
+                "kein internes IPv4-Netz sicher automatisch erkennen. "
+                "Bitte LAN/VLAN-Konfiguration des Routers prüfen."
+            )
+
+        for network in sorted(internal_networks, key=lambda n: (int(n.network_address), n.prefixlen)):
+            cidr = str(network)
+            self._ssh(
+                f'/ip firewall address-list add list="internal-networks" '
+                f'address="{cidr}" comment="WANSINN: auto-detected internal network"'
+            )
+
+        verify = self._ssh(
+            '/ip firewall address-list print terse where list="internal-networks"'
+        )
+        if not verify.strip():
+            raise MikroTikError(
+                "WANSINN konnte die Router-Liste 'internal-networks' nicht anlegen."
+            )
+
+        log.warning(
+            "MikroTik: internal-networks automatisch angelegt: %s",
+            ", ".join(str(network) for network in sorted(
+                internal_networks, key=lambda n: (int(n.network_address), n.prefixlen)
+            )),
+        )
+
     def create_route_profile(self, name: str, gateway: str) -> dict[str, str]:
         """Create only the WANSINN-owned Layer-3 PBR objects.
 
@@ -116,15 +276,9 @@ class MikroTikAddon(RouterAddon):
         table = f"via-{profile_id}"
 
         # WANSINN's PBR rules intentionally exclude internal destinations.
-        # Refuse to create a route profile if that safety boundary is absent.
-        internal = self._ssh(
-            '/ip firewall address-list print terse where list="internal-networks"'
-        )
-        if not internal.strip():
-            raise MikroTikError(
-                "Die Router-Liste 'internal-networks' fehlt. "
-                "WANSINN legt keine PBR-Regel ohne diese Schutzgrenze an."
-            )
+        # Fresh RouterOS installations do not necessarily have the protection
+        # list yet, so bootstrap it from locally connected non-WAN networks.
+        self._ensure_internal_networks(gateway)
 
         table_output = self._ssh('/routing table print terse')
         table_lines = [
@@ -236,7 +390,8 @@ class MikroTikAddon(RouterAddon):
                 )
 
         # Final discovery through the same mechanism used by the dashboard.
-        discovered = self._discover_profiles()
+        self._invalidate_profile_cache()
+        discovered = self._discover_profiles(force=True)
         if profile_id not in discovered:
             raise MikroTikError(
                 "Profil wurde angelegt, aber von WANSINN nicht wiedererkannt."
@@ -275,7 +430,7 @@ class MikroTikAddon(RouterAddon):
             self.set_device_profile(ip, profile)
             return
 
-        discovered = self._discover_profiles()
+        discovered = self._profiles_for_switch(profile)
         if profile not in discovered:
             raise ValueError("Unbekanntes Profil")
 
@@ -297,7 +452,7 @@ class MikroTikAddon(RouterAddon):
 
     def delete_route_profile(self, profile_id: str) -> None:
         profile_id = self._profile_slug(profile_id)
-        discovered = self._discover_profiles()
+        discovered = self._discover_profiles(force=True)
         data = discovered.get(profile_id)
         if data is None:
             raise MikroTikError("Profil wurde auf dem Router nicht gefunden.")
@@ -332,7 +487,8 @@ class MikroTikAddon(RouterAddon):
         )
         self._ssh(f'/routing table remove [find name="{table}"]')
 
-        if profile_id in self._discover_profiles():
+        self._invalidate_profile_cache()
+        if profile_id in self._discover_profiles(force=True):
             raise MikroTikError("Profil ist nach dem Löschen weiterhin vorhanden.")
 
     def profiles(self):
@@ -347,23 +503,24 @@ class MikroTikAddon(RouterAddon):
             raise MikroTikError(f"SSH-Key fehlt: {self.key}")
 
         try:
-            result = subprocess.run(
-                [
-                    "ssh",
-                    "-i", self.key,
-                    "-p", str(self.port),
-                    "-o", "BatchMode=yes",
-                    "-o", "ConnectTimeout=5",
-                    "-o", "StrictHostKeyChecking=yes",
-                    "-o", f"UserKnownHostsFile={self.known_hosts}",
-                    f"{self.user}@{self.host}",
-                    command,
-                ],
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                check=False,
-            )
+            with self._ssh_lock:
+                result = subprocess.run(
+                    [
+                        "ssh",
+                        "-i", self.key,
+                        "-p", str(self.port),
+                        "-o", "BatchMode=yes",
+                        "-o", "ConnectTimeout=5",
+                        "-o", "StrictHostKeyChecking=yes",
+                        "-o", f"UserKnownHostsFile={self.known_hosts}",
+                        f"{self.user}@{self.host}",
+                        command,
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout,
+                    check=False,
+                )
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise MikroTikError(f"SSH-Verbindung fehlgeschlagen: {exc}") from exc
 
@@ -416,7 +573,7 @@ class MikroTikAddon(RouterAddon):
 
     def set_device_profile(self, ip, profile):
         ip = validate_private_ipv4(ip)
-        discovered = self._discover_profiles()
+        discovered = self._profiles_for_switch(profile)
         valid_profiles = {"auto", "offline", *discovered.keys()}
         if profile not in valid_profiles:
             raise ValueError("Unbekanntes Profil")

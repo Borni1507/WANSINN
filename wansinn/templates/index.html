@@ -7,6 +7,13 @@
   {% for p in profiles %}<article><span>{{p.label}}</span><strong>{{counts.get(p.id,0)}}</strong></article>{% endfor %}
 </section>
 
+{% if g.user.role in ('admin', 'operator') %}
+<form class="router-sync-all" method="post" action="{{ url_for('main.sync_all_devices') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <button type="submit">{{ t('home.read_router') }}</button>
+</form>
+{% endif %}
+
 <section class="panel device-panel">
   <div class="device-panel-head">
     <div>
@@ -147,12 +154,6 @@
       {% endif %}
 
 
-      <div class="actions device-actions">
-        <form method="post" action="{{url_for('main.sync',i=d.id)}}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button>{{ t('home.read_router') }}</button>
-        </form>
-      </div>
       {% else %}
       <p class="readonly">Nur-Lese-Zugriff</p>
       {% endif %}

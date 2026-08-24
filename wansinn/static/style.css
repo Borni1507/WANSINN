@@ -3242,3 +3242,8 @@ input[type="submit"].is-working-button::after{
 .language-gate-options{display:grid;grid-template-columns:1fr 1fr;gap:.8rem}
 .language-gate-options button{padding:1rem;font-size:1rem;font-weight:800}
 @media(max-width:520px){.language-gate-options{grid-template-columns:1fr}}
+
+/* v1.0.3-1: one global router-state import control below the status bubbles. */
+.router-sync-all{margin:-2px 0 16px;display:flex;justify-content:flex-end}
+.router-sync-all button{min-width:220px;border-color:#2f6d69;background:#101b20;color:#7fe5d6}
+@media(max-width:700px){.router-sync-all button{width:100%}}

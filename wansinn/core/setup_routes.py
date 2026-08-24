@@ -451,10 +451,7 @@ def first_run():
             session.clear()
             session["user_id"] = admin_id
             session.permanent = True
-            flash_i18n(
-                "Einrichtung abgeschlossen. SSH-Passwort wurde nicht gespeichert.",
-                "success",
-            )
+            flash_i18n("Einrichtung abgeschlossen.", "success")
             return redirect(url_for("main.index"))
         except Exception as exc:
             current_app.logger.exception("First-Run-Setup fehlgeschlagen")

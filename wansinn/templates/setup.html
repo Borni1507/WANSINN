@@ -4,10 +4,7 @@
 <section class="setup-panel panel">
   <small>FIRST RUN</small>
   <h2>WANSINN einrichten</h2>
-  <p>
-    {{ t('setup.intro') }}
-    seinen SSH-Key selbst und speichert das Router-{{ t('setup.password') }} nicht.
-  </p>
+  <p>{{ t('setup.intro') }}</p>
 
   <form method="post" class="setup-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -48,10 +45,6 @@
       <label>{{ t('setup.ssh_password') }}
         <input type="password" name="router_password" autocomplete="off" required>
       </label>
-      <p class="setup-note">
-        {{ t('setup.password_once') }}
-        {{ t('setup.password_once2') }}
-      </p>
       <div id="glinet-takeover-warning" class="setup-note" style="border:2px solid #d33;padding:12px;margin-top:12px;">
         <strong>{{ t('glinet_takeover.title') }}</strong><br>
         {{ t('glinet_takeover.setup_text') | safe }}
