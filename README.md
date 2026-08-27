@@ -96,6 +96,14 @@ Support for additional platforms can be added through the addon system.
 Hardware support should be considered tested only where the project
 explicitly says it has been tested.
 
+### MikroTik / RouterOS compatibility
+
+Use WANSINN with a current RouterOS stable or long-term release. RouterOS 7.19.6 was observed on real RB5009 hardware to misroute policy-routed WAN health-check traffic through the main table even though the WANSINN mangle rule and custom FIB table were active. The same configuration behaved correctly after updating RouterOS. Medic warns for RouterOS versions older than 7.20 so outdated RouterOS is ruled out before WANSINN routing diagnostics.
+
+### Testing-IP recovery
+
+WANSINN uses an additional local Testing-IP for provider health checks on platforms that use client-style policy routing. Because this address is created at runtime, it can disappear after a host or network reboot. WANSINN checks the configured Testing-IP during startup and restores it automatically when necessary. If the address disappears while WANSINN is running, the health probe attempts one automatic recovery before continuing.
+
 ## License
 
 WANSINN is free software licensed under the **GNU General Public License
@@ -114,3 +122,4 @@ respective licenses.
 ------------------------------------------------------------------------
 
 **Developed with AI. Tested on real hardware.**
+

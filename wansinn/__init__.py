@@ -17,6 +17,7 @@ from .core.api import bp as api_bp
 from .core.health import start_health_watcher
 from .core.discovery import start_discovery_watcher
 from .core.logging_setup import configure_logging
+from .core.networking import provision_testing_ip
 from .core.automation import start_automation_watcher
 from .core.setup_routes import bp as setup_bp, has_language_choice, is_configured
 from .core.i18n import init_app as init_i18n_app, t
@@ -74,6 +75,42 @@ def create_app(test_config=None):
     Path(app.instance_path).mkdir(parents=True, exist_ok=True)
     configure_logging(app)
     app.logger.info("WANSINN: UI gestartet · Version %s", app.config.get("WANSINN_VERSION", "?"))
+
+    # The Testing-IP is an additional Linux address created by WANSINN's
+    # network helper. It is not persistent across a host/network reboot.
+    # Restore it before any health watcher can classify WANs as DOWN.
+    if app.config.get("WANSINN_CONFIGURED"):
+        management_ip = str(app.config.get("WANSINN_MANAGEMENT_IP", "")).strip()
+        testing_ip = str(app.config.get("WANSINN_TESTING_IP", "")).strip()
+        if management_ip and testing_ip:
+            try:
+                testing_ip_state = provision_testing_ip(management_ip, testing_ip)
+                if testing_ip_state.get("existing"):
+                    app.logger.info(
+                        "TESTING-IP: %s ready on %s/%s",
+                        testing_ip,
+                        testing_ip_state.get("interface", "?"),
+                        testing_ip_state.get("prefixlen", "?"),
+                    )
+                else:
+                    app.logger.warning(
+                        "TESTING-IP: %s was missing and has been restored on %s/%s",
+                        testing_ip,
+                        testing_ip_state.get("interface", "?"),
+                        testing_ip_state.get("prefixlen", "?"),
+                    )
+            except Exception:
+                # Keep the UI available so the administrator can diagnose the
+                # host. health.py treats a missing source IP as a technical
+                # probe failure instead of falsely declaring every WAN DOWN.
+                app.logger.exception(
+                    "TESTING-IP: startup check/recovery failed for %s", testing_ip
+                )
+        else:
+            app.logger.warning(
+                "TESTING-IP: startup check skipped because management/testing IP is missing"
+            )
+
     init_db_app(app)
     init_i18n_app(app)
     csrf.init_app(app)

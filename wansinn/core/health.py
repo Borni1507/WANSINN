@@ -3,6 +3,7 @@ import logging, sqlite3, subprocess, threading, time
 from datetime import datetime, timezone
 from .db import get_db
 from .i18n import t
+from .networking import provision_testing_ip
 
 log=logging.getLogger(__name__)
 _probe_lock=threading.Lock()
@@ -18,12 +19,25 @@ def _health_availability(db):
     rows=db.execute("SELECT profile_id,health_status FROM route_profiles WHERE enabled=1 ORDER BY profile_id").fetchall()
     return {r["profile_id"]: r["health_status"]=="up" for r in rows}
 
+class _TestingIPUnavailable(RuntimeError):
+    pass
+
+
 def _local_ping(testing_ip,target,timeout):
     timeout=max(1,min(int(timeout),10))
     result=subprocess.run(
         ["ping","-I",testing_ip,"-c","1","-W",str(timeout),target],
         capture_output=True,text=True,timeout=timeout+2,check=False,
     )
+    if result.returncode != 0:
+        detail = f"{result.stderr or ''}\n{result.stdout or ''}".lower()
+        if (
+            "cannot assign requested address" in detail
+            or ("bind" in detail and "address" in detail)
+        ):
+            raise _TestingIPUnavailable(
+                f"Testing-IP {testing_ip} ist lokal nicht verfügbar."
+            )
     return result.returncode==0
 
 def _addon_has_capability(addon, capability):
@@ -43,13 +57,45 @@ def _probe_provider(app,addon,profile_id,target,timeout):
     testing_ip=app.config.get("WANSINN_TESTING_IP","").strip()
     if not testing_ip:
         raise RuntimeError("Testing-IP ist nicht konfiguriert.")
+    log.info(
+        "HEALTH/PROBE: begin profile=%s testing_ip=%s target=%s timeout=%ss",
+        profile_id, testing_ip, target, timeout,
+    )
     with _probe_lock:
+        log.info("HEALTH/PROBE: set %s -> %s", testing_ip, profile_id)
         addon.set_device_profile(testing_ip,profile_id)
         try:
-            return _local_ping(testing_ip,target,timeout)
+            try:
+                ok = _local_ping(testing_ip,target,timeout)
+            except _TestingIPUnavailable:
+                management_ip = str(
+                    app.config.get("WANSINN_MANAGEMENT_IP", "")
+                ).strip()
+                if not management_ip:
+                    raise RuntimeError(
+                        "Testing-IP fehlt lokal und Management-IP ist nicht konfiguriert."
+                    )
+                log.warning(
+                    "HEALTH/PROBE: Testing-IP %s disappeared; restoring before retry",
+                    testing_ip,
+                )
+                state = provision_testing_ip(management_ip, testing_ip)
+                log.warning(
+                    "HEALTH/PROBE: Testing-IP %s restored on %s/%s",
+                    testing_ip,
+                    state.get("interface", "?"),
+                    state.get("prefixlen", "?"),
+                )
+                ok = _local_ping(testing_ip,target,timeout)
+            log.info(
+                "HEALTH/PROBE: result profile=%s testing_ip=%s target=%s reachable=%s",
+                profile_id, testing_ip, target, ok,
+            )
+            return ok
         finally:
             try:
                 addon.set_device_profile(testing_ip,"auto")
+                log.info("HEALTH/PROBE: reset %s -> auto", testing_ip)
             except Exception:
                 log.exception("Testing-IP %s konnte nicht auf AUTO zurückgesetzt werden",testing_ip)
 
@@ -188,7 +234,9 @@ def reconcile_auto_state(app,db):
 
 def _probe_once(app):
     addon=app.extensions.get("wansinn_addon")
-    if addon is None: return
+    if addon is None:
+        log.warning("HEALTH/WATCHER: probe skipped because no add-on is loaded")
+        return
     db=get_db()
     now_mono=time.monotonic()
     runtime=app.extensions.setdefault("wansinn_health_runtime",{"last_probe":{},"router_state_hydrated":False})
@@ -212,6 +260,7 @@ def _probe_once(app):
         "fail_threshold,recover_threshold,health_status,health_fail_count,health_ok_count "
         "FROM route_profiles WHERE enabled=1 AND managed=1 ORDER BY profile_id"
     ).fetchall()
+    runtime["last_profile_count"] = len(profiles)
     availability_changed=False
     recovered_profiles=[]
 
@@ -230,9 +279,14 @@ def _probe_once(app):
     for p in profiles:
         pid=p["profile_id"]
         interval=max(2,min(int(p["health_interval"]),300))
-        if now_mono-last_probe.get(pid,0.0)<interval:
+        age = now_mono-last_probe.get(pid,0.0)
+        if age<interval:
             continue
         last_probe[pid]=now_mono
+        log.info(
+            "HEALTH/WATCHER: probing profile=%s status=%s interval=%ss target=%s",
+            pid, p["health_status"], interval, p["health_target"],
+        )
         try:
             if has_router_probe:
                 ok=_probe_addon_profile(
@@ -291,12 +345,36 @@ def _probe_once(app):
             rearm_recovered_profiles(app, db, recovered_profiles)
 
 def start_health_watcher(app):
-    if app.extensions.get("wansinn_health_thread"): return
+    if app.extensions.get("wansinn_health_thread"):
+        log.warning("HEALTH/WATCHER: start requested but thread is already registered")
+        return
+
+    log.info(
+        "HEALTH/WATCHER: starting configured=%s addon=%s testing_ip=%s",
+        app.config.get("WANSINN_CONFIGURED"),
+        app.config.get("WANSINN_ADDON") or "<none>",
+        app.config.get("WANSINN_TESTING_IP") or "<none>",
+    )
+
     def worker():
+        log.info("HEALTH/WATCHER: worker thread entered")
+        last_heartbeat=0.0
         while True:
             try:
                 with app.app_context():
-                    if app.config.get("WANSINN_CONFIGURED"):
+                    now=time.monotonic()
+                    configured=bool(app.config.get("WANSINN_CONFIGURED"))
+                    if now-last_heartbeat>=30:
+                        runtime=app.extensions.get("wansinn_health_runtime") or {}
+                        thread=threading.current_thread()
+                        log.info(
+                            "HEALTH/WATCHER: heartbeat alive=%s configured=%s addon_loaded=%s profiles_last_seen=%s",
+                            thread.is_alive(), configured,
+                            app.extensions.get("wansinn_addon") is not None,
+                            runtime.get("last_profile_count", "?"),
+                        )
+                        last_heartbeat=now
+                    if configured:
                         _probe_once(app)
             except Exception:
                 log.exception("WANSINN WAN-Health-Watcher")
@@ -304,3 +382,4 @@ def start_health_watcher(app):
     t=threading.Thread(target=worker,name="wansinn-wan-health",daemon=True)
     app.extensions["wansinn_health_thread"]=t
     t.start()
+    log.info("HEALTH/WATCHER: thread started ident=%s", t.ident)

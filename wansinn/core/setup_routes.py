@@ -20,6 +20,7 @@ from werkzeug.security import generate_password_hash
 
 from .i18n import SUPPORTED_LANGUAGES, flash_i18n, set_language
 from .db import get_db
+from .networking import provision_testing_ip
 from .plugins import load_addon
 from .validation import validate_private_ipv4
 
@@ -29,19 +30,9 @@ USERNAME_RE = re.compile(r"^[A-Za-z0-9_.@+-]{1,64}$")
 
 
 def _provision_testing_ip(management_ip: str, testing_ip: str) -> dict:
-    helper = "/usr/local/sbin/wansinn-net-helper"
-    if not Path(helper).exists():
-        raise RuntimeError("WANSINN-Netzwerkhelper fehlt. Bitte ./install.sh erneut ausführen.")
-    result = subprocess.run(
-        ["sudo", "-n", helper, "add", management_ip, testing_ip],
-        capture_output=True, text=True, timeout=10, check=False,
-    )
-    if result.returncode:
-        raise RuntimeError((result.stderr or result.stdout).strip() or "Testing-IP konnte nicht eingerichtet werden.")
-    try:
-        return __import__("json").loads(result.stdout)
-    except Exception as exc:
-        raise RuntimeError("Testing-IP wurde eingerichtet, Antwort war aber ungültig.") from exc
+    # Kept as a local wrapper so first-run setup and startup recovery share the
+    # exact same validated, privileged provisioning path.
+    return provision_testing_ip(management_ip, testing_ip)
 
 
 

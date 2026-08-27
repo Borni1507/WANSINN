@@ -21,6 +21,13 @@ class MikroTikError(RuntimeError):
 
 
 class MikroTikAddon(RouterAddon):
+    # RouterOS 7.19.6 was observed on real hardware to return traffic through
+    # the main table even though WANSINN's PBR mangle rule and custom FIB table
+    # were present and active.  The same setup behaved correctly after a
+    # RouterOS update.  Medic therefore warns conservatively for older builds
+    # instead of treating them as a WANSINN routing defect.
+    _ROUTEROS_WARN_BELOW = (7, 20, 0)
+
     def __init__(self, app, manifest):
         self.app = app
         self.host = app.config["MIKROTIK_HOST"]
@@ -528,6 +535,19 @@ class MikroTikAddon(RouterAddon):
             raise MikroTikError((result.stderr or result.stdout).strip() or "RouterOS-Fehler")
         return result.stdout.strip()
 
+    @staticmethod
+    def _routeros_version_tuple(version: str) -> tuple[int, int, int] | None:
+        """Return a comparable RouterOS version tuple from resource output.
+
+        RouterOS commonly reports values such as ``7.24.1 (stable)``.  Keep
+        parsing deliberately small and tolerant so Medic can still display the
+        original version string unchanged.
+        """
+        match = re.search(r"(?<!\d)(\d+)\.(\d+)(?:\.(\d+))?", version or "")
+        if not match:
+            return None
+        return tuple(int(part or 0) for part in match.groups())
+
     def test_connection(self):
         return {
             "ok": "WANSINN_OK" in self._ssh(':put "WANSINN_OK"'),
@@ -536,40 +556,67 @@ class MikroTikAddon(RouterAddon):
         }
 
     def _ensure_offline_rule(self) -> None:
-        """Create and verify the WANSINN OFFLINE rule."""
-        existing = self._ssh(
-            '/ip firewall filter print terse where comment="WANSINN: OFFLINE"'
-        )
-        if existing.strip():
-            return
+        """Create one canonical WANSINN OFFLINE rule and verify it.
 
-        # Keep provisioning deliberately simple. RouterOS accepted this exact
-        # rule during the live integration test.
-        self._ssh(
-            '/ip firewall filter add '
-            'chain=forward '
-            'src-address-list=force-offline '
-            'dst-address-list=!internal-networks '
-            'action=drop '
-            'comment="WANSINN: OFFLINE"'
-        )
+        The check/add sequence must be atomic from WANSINN's point of view.
+        Several simultaneous AUTO/OFFLINE operations could otherwise all see
+        an empty rule set and create duplicates.  ``_ssh_lock`` is an RLock,
+        so holding it across the complete reconciliation remains safe while
+        the nested ``_ssh`` calls serialize on the same connection gate.
+        """
 
-        verified = self._ssh(
-            '/ip firewall filter print terse where comment="WANSINN: OFFLINE"'
-        )
-
-        valid = any(
-            'chain=forward' in line
-            and 'action=drop' in line
-            and 'src-address-list=force-offline' in line
-            and 'dst-address-list=!internal-networks' in line
-            for line in verified.splitlines()
-        )
-
-        if not valid:
-            raise RuntimeError(
-                "OFFLINE-Sperrregel konnte auf dem Router nicht verifiziert werden."
+        def is_valid(line: str) -> bool:
+            return (
+                'chain=forward' in line
+                and 'action=drop' in line
+                and 'src-address-list=force-offline' in line
+                and 'dst-address-list=!internal-networks' in line
             )
+
+        with self._ssh_lock:
+            existing = self._ssh(
+                '/ip firewall filter print terse where comment="WANSINN: OFFLINE"'
+            )
+            lines = [line for line in existing.splitlines() if line.strip()]
+
+            # The common case: exactly one already-correct rule.  Leave its
+            # position and counters untouched.
+            if len(lines) == 1 and is_valid(lines[0]):
+                return
+
+            if lines:
+                log.warning(
+                    "MikroTik: OFFLINE-Regel wird normalisiert (%d vorhandene Regel(n)).",
+                    len(lines),
+                )
+                self._ssh(
+                    '/ip firewall filter remove '
+                    '[find where comment="WANSINN: OFFLINE"]'
+                )
+
+            # Keep provisioning deliberately simple. RouterOS accepted this
+            # exact rule during the live integration test.
+            self._ssh(
+                '/ip firewall filter add '
+                'chain=forward '
+                'src-address-list=force-offline '
+                'dst-address-list=!internal-networks '
+                'action=drop '
+                'comment="WANSINN: OFFLINE"'
+            )
+
+            verified = self._ssh(
+                '/ip firewall filter print terse where comment="WANSINN: OFFLINE"'
+            )
+            verified_lines = [
+                line for line in verified.splitlines() if line.strip()
+            ]
+
+            if len(verified_lines) != 1 or not is_valid(verified_lines[0]):
+                raise RuntimeError(
+                    "OFFLINE-Sperrregel konnte auf dem Router nicht eindeutig "
+                    "verifiziert werden."
+                )
 
     def set_device_profile(self, ip, profile):
         ip = validate_private_ipv4(ip)
@@ -888,7 +935,13 @@ class MikroTikAddon(RouterAddon):
             architecture = self._extract_value(resource, "architecture-name")
             cpu_load = self._extract_value(resource, "cpu-load")
 
-            details = tuple(
+            parsed_version = self._routeros_version_tuple(version)
+            outdated_routeros = (
+                parsed_version is not None
+                and parsed_version < self._ROUTEROS_WARN_BELOW
+            )
+
+            detail_items = [
                 detail
                 for detail in (
                     f"Modell: {board_name}" if board_name else None,
@@ -896,13 +949,28 @@ class MikroTikAddon(RouterAddon):
                     f"CPU-Last: {cpu_load}" if cpu_load else None,
                 )
                 if detail
-            )
+            ]
+            if outdated_routeros:
+                detail_items.extend(
+                    (
+                        "Veraltete RouterOS-Version erkannt.",
+                        "RouterOS 7.19.6 zeigte im Hardwaretest fehlerhaftes "
+                        "Policy-Routing bei WAN-Healthchecks.",
+                        "Bitte RouterOS vor der WANSINN-Fehlersuche auf eine "
+                        "aktuelle stable/long-term Version aktualisieren.",
+                    )
+                )
+            details = tuple(detail_items)
+
+            routeros_status = "ok"
+            if version == "unbekannt" or outdated_routeros:
+                routeros_status = "warning"
 
             checks.append(
                 HealthCheck(
                     "routeros",
                     "RouterOS",
-                    "ok" if version != "unbekannt" else "warning",
+                    routeros_status,
                     f"{router_name} · RouterOS {version}",
                     details,
                 )
