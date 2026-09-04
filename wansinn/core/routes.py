@@ -1311,14 +1311,11 @@ def update_route_health(profile_id):
             request.form.get("health_target", "").strip()
         )
         interval = int(request.form.get("health_interval", "10"))
-        timeout = int(request.form.get("health_timeout", "2"))
         fail_threshold = int(request.form.get("fail_threshold", "3"))
         recover_threshold = int(request.form.get("recover_threshold", "2"))
 
         if not (2 <= interval <= 300):
             raise ValueError("Intervall muss zwischen 2 und 300 Sekunden liegen.")
-        if not (1 <= timeout <= 10):
-            raise ValueError("Timeout muss zwischen 1 und 10 Sekunden liegen.")
         if not (1 <= fail_threshold <= 10):
             raise ValueError("Fehlschläge bis DOWN müssen zwischen 1 und 10 liegen.")
         if not (1 <= recover_threshold <= 10):
@@ -1330,7 +1327,6 @@ def update_route_health(profile_id):
             UPDATE route_profiles
             SET health_target=?,
                 health_interval=?,
-                health_timeout=?,
                 fail_threshold=?,
                 recover_threshold=?,
                 health_status='unknown',
@@ -1343,7 +1339,6 @@ def update_route_health(profile_id):
             (
                 target,
                 interval,
-                timeout,
                 fail_threshold,
                 recover_threshold,
                 profile_id,
@@ -1365,7 +1360,7 @@ def update_route_health(profile_id):
 @roles_required("admin")
 def test_route_health(profile_id):
     row = get_db().execute(
-        "SELECT health_target,health_timeout FROM route_profiles WHERE profile_id=?",
+        "SELECT health_target,health_timeout,gateway FROM route_profiles WHERE profile_id=?",
         (profile_id,),
     ).fetchone()
     if row is None:
@@ -1389,12 +1384,19 @@ def test_route_health(profile_id):
                 profile_id,
                 row["health_target"],
                 row["health_timeout"],
+                row["gateway"],
             )
-        flash_i18n(
-            f"{profile_id.upper()} → {row['health_target']}: "
-            + ("ERREICHBAR" if ok else "NICHT ERREICHBAR"),
-            "success" if ok else "error",
-        )
+        if ok is None:
+            flash_i18n(
+                f"{profile_id.upper()} → {row['health_target']}: TEST VERWORFEN (falscher Pfad)",
+                "warning",
+            )
+        else:
+            flash_i18n(
+                f"{profile_id.upper()} → {row['health_target']}: "
+                + ("ERREICHBAR" if ok else "NICHT ERREICHBAR"),
+                "success" if ok else "error",
+            )
     except Exception as exc:
         flash_i18n(f"Test fehlgeschlagen: {exc}", "error")
 

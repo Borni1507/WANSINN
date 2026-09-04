@@ -15,6 +15,7 @@ command -v python3 >/dev/null || { echo "Python 3 fehlt."; exit 1; }
 command -v ssh >/dev/null || { echo "OpenSSH Client fehlt."; exit 1; }
 command -v ip >/dev/null || { echo "iproute2 fehlt."; exit 1; }
 command -v ping >/dev/null || { echo "iputils-ping fehlt."; exit 1; }
+command -v traceroute >/dev/null || { echo "traceroute fehlt."; exit 1; }
 
 if [ ! -d .venv ]; then
   echo "[1/4] Erstelle Python-Umgebung ..."

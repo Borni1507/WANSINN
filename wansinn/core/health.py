@@ -1,5 +1,5 @@
 from __future__ import annotations
-import logging, sqlite3, subprocess, threading, time
+import ipaddress, logging, shutil, sqlite3, subprocess, threading, time
 from datetime import datetime, timezone
 from .db import get_db
 from .i18n import t
@@ -8,6 +8,9 @@ from .networking import provision_testing_ip
 log=logging.getLogger(__name__)
 _probe_lock=threading.Lock()
 _reconcile_lock=threading.Lock()
+_trace_lock=threading.Lock()
+_trace_last_run={}
+_TRACE_MIN_INTERVAL=60
 
 def _now():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -23,22 +26,115 @@ class _TestingIPUnavailable(RuntimeError):
     pass
 
 
-def _local_ping(testing_ip,target,timeout):
-    timeout=max(1,min(int(timeout),10))
-    result=subprocess.run(
-        ["ping","-I",testing_ip,"-c","1","-W",str(timeout),target],
-        capture_output=True,text=True,timeout=timeout+2,check=False,
+def _trace_line_has_ip(line, address):
+    """Return True only when a numbered traceroute hop contains ``address``."""
+    parts=line.strip().split()
+    if len(parts) < 2 or not parts[0].isdigit():
+        return False
+    try:
+        wanted=ipaddress.ip_address(address)
+    except ValueError:
+        wanted=None
+    for token in parts[1:]:
+        candidate=token.strip("()[],:;")
+        try:
+            if wanted is not None and ipaddress.ip_address(candidate) == wanted:
+                return True
+        except ValueError:
+            continue
+        if wanted is None and candidate == address:
+            return True
+    return False
+
+
+def _trace_line_reaches_target(line, target):
+    """Return True only when a traceroute hop line actually contains target.
+
+    The traceroute header also contains the destination, so a plain substring
+    search would create false positives. Only numbered hop lines count.
+    """
+    return _trace_line_has_ip(line, target)
+
+
+def _local_trace_probe(testing_ip, target, timeout, profile_id, expected_gateway):
+    """Use traceroute itself as the authoritative WAN health probe.
+
+    A probe is usable only when the configured gateway appears as an actual
+    traceroute hop. This rejects transient cross-WAN routing leaks without
+    turning them into false UP/DOWN samples. A valid probe is healthy only
+    when the configured target is reached. Every trace is kept in DEBUG.
+    """
+    traceroute=shutil.which("traceroute")
+    if not traceroute:
+        raise RuntimeError(
+            "traceroute fehlt. Bitte das Paket 'traceroute' installieren."
+        )
+
+    # Traceroute health is intentionally deterministic; the old Ping-Timeout UI no longer controls it.
+    wait=1
+    command=[
+        traceroute, "-n", "-I", "-s", testing_ip,
+        "-q", "1", "-w", str(wait), "-m", "16", target,
+    ]
+    log.debug(
+        "HEALTH/TRACE: begin profile=%s testing_ip=%s target=%s",
+        profile_id, testing_ip, target,
     )
-    if result.returncode != 0:
-        detail = f"{result.stderr or ''}\n{result.stdout or ''}".lower()
-        if (
-            "cannot assign requested address" in detail
-            or ("bind" in detail and "address" in detail)
-        ):
-            raise _TestingIPUnavailable(
-                f"Testing-IP {testing_ip} ist lokal nicht verfügbar."
-            )
-    return result.returncode==0
+    try:
+        result=subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=(16 * wait) + 4,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        stdout=exc.stdout or ""
+        stderr=exc.stderr or ""
+        if isinstance(stdout, bytes):
+            stdout=stdout.decode(errors="replace")
+        if isinstance(stderr, bytes):
+            stderr=stderr.decode(errors="replace")
+        for line in str(stdout).splitlines():
+            log.debug("HEALTH/TRACE: profile=%s %s", profile_id, line.rstrip())
+        for line in str(stderr).splitlines():
+            log.debug("HEALTH/TRACE: profile=%s stderr=%s", profile_id, line.rstrip())
+        lines=str(stdout).splitlines()
+        reached=any(_trace_line_reaches_target(line, target) for line in lines)
+        gateway_seen=any(_trace_line_has_ip(line, expected_gateway) for line in lines)
+        log.debug(
+            "HEALTH/TRACE: timeout profile=%s target=%s reached=%s gateway_seen=%s",
+            profile_id, target, reached, gateway_seen,
+        )
+        return reached, gateway_seen
+
+    output=result.stdout or ""
+    error=result.stderr or ""
+    detail=f"{error}\n{output}".lower()
+    if (
+        "cannot assign requested address" in detail
+        or ("bind" in detail and "address" in detail)
+    ):
+        raise _TestingIPUnavailable(
+            f"Testing-IP {testing_ip} ist lokal nicht verfügbar."
+        )
+
+    reached=False
+    gateway_seen=False
+    for line in output.splitlines():
+        log.debug("HEALTH/TRACE: profile=%s %s", profile_id, line.rstrip())
+        if _trace_line_reaches_target(line, target):
+            reached=True
+        if _trace_line_has_ip(line, expected_gateway):
+            gateway_seen=True
+    for line in error.splitlines():
+        log.debug("HEALTH/TRACE: profile=%s stderr=%s", profile_id, line.rstrip())
+
+    log.debug(
+        "HEALTH/TRACE: end profile=%s target=%s rc=%s reached=%s gateway=%s gateway_seen=%s",
+        profile_id, target, result.returncode, reached, expected_gateway, gateway_seen,
+    )
+    return reached, gateway_seen
 
 def _addon_has_capability(addon, capability):
     info = getattr(addon, "info", None)
@@ -53,10 +149,13 @@ def _probe_addon_profile(addon, profile_id, target, timeout):
     return bool(probe(profile_id, target, timeout))
 
 
-def _probe_provider(app,addon,profile_id,target,timeout):
+def _probe_provider(app,addon,profile_id,target,timeout,expected_gateway):
     testing_ip=app.config.get("WANSINN_TESTING_IP","").strip()
     if not testing_ip:
         raise RuntimeError("Testing-IP ist nicht konfiguriert.")
+    expected_gateway=str(expected_gateway or "").strip()
+    if not expected_gateway:
+        raise RuntimeError(f"Gateway für Profil {profile_id} ist nicht konfiguriert.")
     log.info(
         "HEALTH/PROBE: begin profile=%s testing_ip=%s target=%s timeout=%ss",
         profile_id, testing_ip, target, timeout,
@@ -66,7 +165,9 @@ def _probe_provider(app,addon,profile_id,target,timeout):
         addon.set_device_profile(testing_ip,profile_id)
         try:
             try:
-                ok = _local_ping(testing_ip,target,timeout)
+                ok, path_valid = _local_trace_probe(
+                    testing_ip,target,timeout,profile_id,expected_gateway
+                )
             except _TestingIPUnavailable:
                 management_ip = str(
                     app.config.get("WANSINN_MANAGEMENT_IP", "")
@@ -86,10 +187,30 @@ def _probe_provider(app,addon,profile_id,target,timeout):
                     state.get("interface", "?"),
                     state.get("prefixlen", "?"),
                 )
-                ok = _local_ping(testing_ip,target,timeout)
+                ok, path_valid = _local_trace_probe(
+                    testing_ip,target,timeout,profile_id,expected_gateway
+                )
+            if not path_valid:
+                log.warning(
+                    "HEALTH/PROBE: discard profile=%s testing_ip=%s target=%s "
+                    "reason=wrong-path expected_gateway=%s; retrying",
+                    profile_id, testing_ip, target, expected_gateway,
+                )
+                time.sleep(0.5)
+                ok, path_valid = _local_trace_probe(
+                    testing_ip,target,timeout,profile_id,expected_gateway
+                )
+                if not path_valid:
+                    log.warning(
+                        "HEALTH/PROBE: result profile=%s testing_ip=%s target=%s "
+                        "valid=False reason=wrong-path expected_gateway=%s",
+                        profile_id, testing_ip, target, expected_gateway,
+                    )
+                    return None
             log.info(
-                "HEALTH/PROBE: result profile=%s testing_ip=%s target=%s reachable=%s",
-                profile_id, testing_ip, target, ok,
+                "HEALTH/PROBE: result profile=%s testing_ip=%s target=%s "
+                "reachable=%s valid=True gateway=%s",
+                profile_id, testing_ip, target, ok, expected_gateway,
             )
             return ok
         finally:
@@ -256,7 +377,7 @@ def _probe_once(app):
             runtime["router_state_hydrated"]=True
     last_probe=runtime["last_probe"]
     profiles=db.execute(
-        "SELECT profile_id,health_target,health_interval,health_timeout,"
+        "SELECT profile_id,gateway,health_target,health_interval,health_timeout,"
         "fail_threshold,recover_threshold,health_status,health_fail_count,health_ok_count "
         "FROM route_profiles WHERE enabled=1 AND managed=1 ORDER BY profile_id"
     ).fetchall()
@@ -295,11 +416,20 @@ def _probe_once(app):
             elif readonly_status is not None and pid in readonly_status:
                 ok=bool(readonly_status[pid])
             else:
-                ok=_probe_provider(app,addon,pid,p["health_target"],p["health_timeout"])
+                ok=_probe_provider(
+                    app,addon,pid,p["health_target"],p["health_timeout"],p["gateway"]
+                )
         except Exception:
             log.exception("WAN-Healthcheck %s technisch fehlgeschlagen",pid)
             db.execute("UPDATE route_profiles SET health_status='unknown',health_last_check=? WHERE profile_id=?",(_now(),pid))
             db.commit()
+            continue
+        if ok is None:
+            log.warning(
+                "HEALTH/WATCHER: ignored invalid probe profile=%s; "
+                "health state and counters unchanged",
+                pid,
+            )
             continue
         old=p["health_status"]
         fail_count=int(p["health_fail_count"]); ok_count=int(p["health_ok_count"])

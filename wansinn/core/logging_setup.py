@@ -41,7 +41,7 @@ def configure_logging(app) -> None:
         encoding="utf-8",
     )
     handler._wansinn_rotating_file = True
-    handler.setLevel(logging.INFO)
+    handler.setLevel(logging.DEBUG)
     handler.setFormatter(
         logging.Formatter(
             "%(asctime)s %(levelname)s:%(name)s:%(message)s",
@@ -49,6 +49,10 @@ def configure_logging(app) -> None:
         )
     )
     root.addHandler(handler)
+
+    # Keep normal application logging at INFO, but persist detailed Medic
+    # diagnostics so the DEBUG filter on the web log page has useful data.
+    logging.getLogger("wansinn.core.health").setLevel(logging.DEBUG)
 
     logging.getLogger(__name__).info(
         "LOG: Web-Log aktiv (%s, 5 MiB × 6 Dateien)",

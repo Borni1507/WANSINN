@@ -77,15 +77,6 @@
               <small>{{ t('routes.check_interval_help') }}</small>
             </label>
 
-            <label>Ping-Timeout
-              <div class="input-with-unit">
-                <input type="number" name="health_timeout" min="1" max="10"
-                       value="{{ p.health_timeout }}" required>
-                <span>s</span>
-              </div>
-              <small>{{ t('routes.ping_wait_help') }}</small>
-            </label>
-
             <div class="wan-thresholds">
               <label>Fails → DOWN
                 <input type="number" name="fail_threshold" min="1" max="10"
