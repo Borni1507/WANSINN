@@ -112,6 +112,16 @@ def _local_trace_probe(testing_ip, target, timeout, profile_id, expected_gateway
     error=result.stderr or ""
     detail=f"{error}\n{output}".lower()
     if (
+        "not enough privileges" in detail
+        or "operation not permitted" in detail
+        or "vorgang nicht zulässig" in detail
+        or "permission denied" in detail
+    ):
+        raise RuntimeError(
+            "Traceroute hat nicht genügend Netzwerkrechte. "
+            "Bitte ./install.sh erneut ausführen, damit CAP_NET_RAW gesetzt wird."
+        )
+    if (
         "cannot assign requested address" in detail
         or ("bind" in detail and "address" in detail)
     ):

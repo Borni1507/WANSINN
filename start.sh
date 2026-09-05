@@ -17,6 +17,17 @@ fi
 IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 IP="${IP:-127.0.0.1}"
 
+if ss -ltnH 'sport = :8080' 2>/dev/null | grep -q .; then
+  echo
+  printf '\033[1;31m'
+  echo '-----------------'
+  echo '|  PORT BELEGT  |'
+  echo '-----------------'
+  printf '\033[0m'
+  echo
+  exit 1
+fi
+
 echo
 echo "======================================"
 echo "   WANSINN v${VERSION} startet"

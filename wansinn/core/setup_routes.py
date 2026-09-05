@@ -4,6 +4,7 @@ import os
 import re
 import shlex
 import subprocess
+import time
 from pathlib import Path
 
 import paramiko
@@ -115,24 +116,44 @@ def _key_login_works(
     known_hosts: Path,
     test_command: str = ':put "WANSINN_OK"',
 ) -> bool:
-    result = subprocess.run(
-        [
-            "ssh",
-            "-i", str(key_path),
-            "-p", str(port),
-            "-o", "BatchMode=yes",
-            "-o", "ConnectTimeout=5",
-            "-o", "StrictHostKeyChecking=yes",
-            "-o", f"UserKnownHostsFile={known_hosts}",
-            f"{user}@{host}",
-            test_command,
-        ],
-        capture_output=True,
-        text=True,
-        timeout=10,
-        check=False,
-    )
-    return result.returncode == 0 and "WANSINN_OK" in result.stdout
+    try:
+        result = subprocess.run(
+            [
+                "ssh",
+                "-i", str(key_path),
+                "-p", str(port),
+                "-o", "BatchMode=yes",
+                "-o", "ConnectTimeout=5",
+                "-o", "StrictHostKeyChecking=yes",
+                "-o", f"UserKnownHostsFile={known_hosts}",
+                f"{user}@{host}",
+                test_command,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        current_app.logger.warning(
+            "SSH-Key-Test konnte nicht abgeschlossen werden: host=%s user=%s error=%r",
+            host,
+            user,
+            exc,
+        )
+        return False
+
+    ok = result.returncode == 0 and "WANSINN_OK" in result.stdout
+    if not ok:
+        current_app.logger.warning(
+            "SSH-Key-Test fehlgeschlagen: host=%s user=%s rc=%d stdout=%r stderr=%r",
+            host,
+            user,
+            result.returncode,
+            result.stdout,
+            result.stderr,
+        )
+    return ok
 
 
 def _bootstrap_mikrotik(host: str, user: str, password: str, port: int, key_path: Path, known_hosts: Path) -> None:
@@ -167,42 +188,49 @@ def _bootstrap_mikrotik(host: str, user: str, password: str, port: int, key_path
             transport.get_remote_server_key(),
         )
 
-        public_key = key_path.with_suffix(key_path.suffix + ".pub")
-        remote_name = "wansinn-bootstrap.pub"
+        public_key = key_path.with_suffix(key_path.suffix + ".pub").read_text(
+            encoding="utf-8"
+        ).strip()
+        if not public_key.startswith("ssh-ed25519 "):
+            raise RuntimeError("Der erzeugte SSH-Public-Key hat ein unerwartetes Format.")
 
-        sftp = client.open_sftp()
-        try:
-            sftp.put(str(public_key), remote_name)
-        finally:
-            sftp.close()
-
-        command = (
-            f'/user ssh-keys import public-key-file="{remote_name}" '
-            f'user="{user}"'
-        )
+        # RouterOS supports adding an SSH public key directly. This avoids the
+        # SFTP subsystem entirely, which is not reliably available during
+        # first-run provisioning on all MikroTik devices.
+        escaped_key = public_key.replace("\\", "\\\\").replace('"', '\\"')
+        command = f'/user ssh-keys add user="{user}" key="{escaped_key}"'
         _stdin, stdout, stderr = client.exec_command(command, timeout=10)
         status = stdout.channel.recv_exit_status()
         output = (stdout.read() + stderr.read()).decode("utf-8", "replace").strip()
 
-        # RouterOS can report a duplicate on a retry. The real acceptance test
-        # is the key-only login below.
+        # A retry after a partially completed setup can hit an already-present
+        # key. The definitive acceptance test remains the key-only login below.
         if status != 0 and "already" not in output.lower():
-            raise RuntimeError(output or "RouterOS konnte den SSH-Key nicht importieren.")
-
-        try:
-            sftp = client.open_sftp()
-            try:
-                sftp.remove(remote_name)
-            finally:
-                sftp.close()
-        except Exception:
-            pass
+            raise RuntimeError(output or "RouterOS konnte den SSH-Key nicht hinzufügen.")
     finally:
         client.close()
 
-    if not _key_login_works(host, user, port, key_path, known_hosts):
+    key_login_ok = False
+    for attempt in range(1, 6):
+        if _key_login_works(host, user, port, key_path, known_hosts):
+            current_app.logger.info(
+                "MikroTik SSH-Key-Login erfolgreich (Versuch %d/5).",
+                attempt,
+            )
+            key_login_ok = True
+            break
+
+        current_app.logger.warning(
+            "MikroTik SSH-Key-Login noch nicht bereit (Versuch %d/5).",
+            attempt,
+        )
+        if attempt < 5:
+            time.sleep(1)
+
+    if not key_login_ok:
         raise RuntimeError(
-            "SSH-Key wurde übertragen, aber der anschließende Key-Login ist fehlgeschlagen."
+            "SSH-Key wurde auf RouterOS hinzugefügt, konnte aber nach mehreren "
+            "Versuchen nicht zur Anmeldung verwendet werden."
         )
 
 

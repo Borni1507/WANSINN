@@ -39,6 +39,11 @@
         {{ t('setup.testing_help') }}
         {{ t('setup.testing_help2') }}
       </p>
+      <div id="mikrotik-full-warning" class="setup-note" style="border:3px solid #d33;padding:14px;margin:12px 0;font-weight:700;">
+        <strong>WICHTIG: MikroTik-Benutzer muss Gruppe „full“ verwenden!</strong><br>
+        Bitte stellen Sie bei der Benutzererstellung unbedingt <code>Group: full</code> ein.
+        Andernfalls kann WANSINN den benötigten SSH-Schlüssel nicht einrichten und die Einrichtung schlägt fehl.
+      </div>
       <label>{{ t('setup.ssh_user') }}
         <input name="router_user" placeholder="wansinn" required>
       </label>
@@ -72,9 +77,13 @@
   <script>
   (() => {
     const select = document.getElementById('setup-addon');
-    const box = document.getElementById('glinet-takeover-warning');
-    if (!select || !box) return;
-    const sync = () => { box.style.display = select.value === 'glinet' ? 'block' : 'none'; };
+    const glinetBox = document.getElementById('glinet-takeover-warning');
+    const mikrotikBox = document.getElementById('mikrotik-full-warning');
+    if (!select) return;
+    const sync = () => {
+      if (glinetBox) glinetBox.style.display = select.value === 'glinet' ? 'block' : 'none';
+      if (mikrotikBox) mikrotikBox.style.display = select.value === 'mikrotik' ? 'block' : 'none';
+    };
     select.addEventListener('change', sync); sync();
   })();
   </script>
