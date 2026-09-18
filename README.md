@@ -28,7 +28,7 @@ updating a v1.x installation:
 2. Click **Download wansinn.cfg** and keep the exported configuration safe.
 3. Perform a fresh installation of the new version with `./install.sh`.
 4. Open **Settings → WANSINN-Config** again and load the saved `wansinn.cfg`.
-5. Click **Config ersetzen** to restore the configuration.
+5. Click **Replace config** to restore the configuration.
 
 This fresh-install workflow is the recommended update path for WANSINN
 v1.x and preserves the exported configuration as well as the stored
