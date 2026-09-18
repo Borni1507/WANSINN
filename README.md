@@ -15,6 +15,27 @@ testing.
 > **Project status:** WANSINN is still under active development. Expect
 > changes, rough edges, and the occasional router-related adventure.
 
+## Updating WANSINN v1.x
+
+<div style="color:red">
+
+**⚠️ BEST PRACTICE FOR v1.x UPDATES**
+
+To keep your WANSINN configuration and access credentials safe when
+updating a v1.x installation:
+
+1. Open **Settings → WANSINN-Config**.
+2. Click **Download wansinn.cfg** and keep the exported configuration safe.
+3. Perform a fresh installation of the new version with `./install.sh`.
+4. Open **Settings → WANSINN-Config** again and load the saved `wansinn.cfg`.
+5. Click **Config ersetzen** to restore the configuration.
+
+This fresh-install workflow is the recommended update path for WANSINN
+v1.x and preserves the exported configuration as well as the stored
+access settings.
+
+</div>
+
 ## What WANSINN does
 
 WANSINN provides a central place to control WAN routing, DNS routing and
@@ -150,27 +171,6 @@ WANSINN checks the configured Testing-IP during startup and restores it
 automatically when necessary. If the address disappears while WANSINN is
 running, the health probe attempts one automatic recovery before
 continuing.
-
-## Updating WANSINN v1.x
-
-<div style="color:red">
-
-**⚠️ BEST PRACTICE FOR v1.x UPDATES**
-
-To keep your WANSINN configuration and access credentials safe when
-updating a v1.x installation:
-
-1. Open **Settings → WANSINN-Config**.
-2. Click **Download wansinn.cfg** and keep the exported configuration safe.
-3. Perform a fresh installation of the new version with `./install.sh`.
-4. Open **Settings → WANSINN-Config** again and load the saved `wansinn.cfg`.
-5. Click **Config ersetzen** to restore the configuration.
-
-This fresh-install workflow is the recommended update path for WANSINN
-v1.x and preserves the exported configuration as well as the stored
-access settings.
-
-</div>
 
 ## Release notes
 
